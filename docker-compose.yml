@@ -1,0 +1,34 @@
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: nfl_neo4j
+    ports:
+      - "7474:7474"   # HTTP browser UI
+      - "7687:7687"   # Bolt driver
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-password}
+      NEO4J_server_memory_pagecache_size: 512M
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"${NEO4J_PASSWORD:-password}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  app:
+    build: .
+    container_name: nfl_app
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password}
+    # Default command (ingest) comes from the Dockerfile; override as needed:
+    #   docker compose run --rm app uv run main.py --train 2010-2022 --test 2023
+
+volumes:
+  neo4j_data:

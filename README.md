@@ -44,9 +44,54 @@ held-out season.
 The model learns real signal (beats the ~55% always-pick-home baseline) but does
 not beat the market yet.
 
+## Graph store (Neo4j)
+
+Teams and the people associated with them are modeled as a graph.
+
+**Nodes:** `Team`, `Player`, `Coach`, `Owner`
+**Relationships:**
+- `(:Player)-[:PLAYED_FOR {season, position, jersey_number, status}]->(:Team)`
+- `(:Coach)-[:COACHED {season, role}]->(:Team)`
+- `(:Owner)-[:OWNS]->(:Team)`
+
+Data sources: teams/rosters/coaches come from `nflreadpy` (coaches via the
+schedule's `home_coach`/`away_coach`). **Ownership has no `nflreadpy` feed**, so
+it is loaded from `data/owners.csv` — a user-maintained file; verify it for the
+current season, as ownership changes hands.
+
+Connection is configured via env vars (`NEO4J_URI`, `NEO4J_USER`,
+`NEO4J_PASSWORD`); see `.env.example`.
+
+## Running with Docker
+
+`docker-compose.yml` runs Neo4j plus the app image. The app waits for Neo4j's
+health check before connecting.
+
+```bash
+cp .env.example .env          # set NEO4J_PASSWORD (min 8 chars)
+docker compose up -d neo4j    # start the database
+docker compose run --rm app   # build + ingest the graph (default command)
+```
+
+Then browse the graph at <http://localhost:7474> (bolt on `7687`).
+
+Run the betting model in the same image:
+
+```bash
+docker compose run --rm app uv run main.py --train 2010-2022 --test 2023
+```
+
+Or run either script directly on the host (deps via `uv sync`):
+
+```bash
+uv run ingest_graph.py --seasons 2022-2023
+uv run query_demo.py          # sample relationship queries
+```
+
 ## Next steps
 
 - Elo team ratings
 - EPA / play-level features from `nflreadpy.load_pbp`
 - Gradient boosting (`HistGradientBoostingClassifier`)
 - Probability calibration + ROI evaluation vs closing lines
+- Link the graph into the model (coach tenure, roster continuity as features)
