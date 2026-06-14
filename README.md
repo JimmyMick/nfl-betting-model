@@ -28,21 +28,36 @@ held-out season.
 - **Features** (`nfl_betting_model/features.py`) — strictly pre-game signals with
   no leakage (every stat is `shift(1)`'d so a game never sees its own result):
   rolling 5-game form (points for/against, margin, win rate), season-to-date win
-  rate, rest-day difference, divisional flag. Also derives vig-free implied
-  probabilities from the moneyline for benchmarking.
-- **Model** (`nfl_betting_model/model.py`) — `SimpleImputer` →  `StandardScaler` →
-  `LogisticRegression`, with a time-based train/test split and evaluation against
-  the market (accuracy, log loss, Brier, AUC).
+  rate, rest-day difference, divisional flag. Composable Elo and EPA blocks layer
+  on optionally. Also derives vig-free implied probabilities from the moneyline.
+- **Elo** (`nfl_betting_model/elo.py`) — 538-style ratings with home-field
+  advantage, margin-of-victory scaling, and between-season reversion to the mean.
+  Ratings are read before each game and updated after, so the `elo_diff` /
+  `elo_prob` features never leak.
+- **EPA** (`nfl_betting_model/epa.py`) — per-team offensive and defensive
+  expected-points-added per play from `load_pbp`, aggregated one season at a time
+  and turned into leak-free rolling form by the feature layer.
+- **Model** (`nfl_betting_model/model.py`) — either `SimpleImputer` →
+  `StandardScaler` → `LogisticRegression`, or a `HistGradientBoostingClassifier`
+  (handles NaNs + interactions). Time-based split, evaluated against the market
+  (accuracy, log loss, Brier, AUC). `main.py` runs an ablation across feature
+  sets and both model types.
 
-## v1 baseline (trained 2010–2022, tested on 2023)
+## Ablation (trained 2010–2022, tested on 2023)
 
-| | Accuracy | Log loss | Brier | AUC |
+| Config | Accuracy | Log loss | Brier | AUC |
 |---|---|---|---|---|
-| Model | 61.8% | 0.657 | 0.233 | 0.637 |
+| base form (logistic) | 61.8% | 0.657 | 0.233 | 0.637 |
+| + Elo (logistic) | 61.4% | **0.650** | **0.229** | **0.659** |
+| + Elo + EPA (logistic) | 61.8% | 0.655 | 0.231 | 0.651 |
+| + Elo + EPA (GBM) | **64.9%** | 0.661 | 0.233 | 0.642 |
 | Vegas market | 67.0% | 0.627 | 0.219 | — |
 
-The model learns real signal (beats the ~55% always-pick-home baseline) but does
-not beat the market yet.
+Takeaways: **Elo gives the best calibration** (log loss / Brier / AUC); **EPA is
+collinear with Elo** and barely moves the linear model, but the **gradient-boosted
+model turns it into accuracy** (61.8% → 64.9%, closing ~1/3 of the gap to the
+market). The model learns real signal but still does not beat the closing line —
+the standing benchmark to chase.
 
 ## Graph store (Neo4j)
 
@@ -90,8 +105,8 @@ uv run query_demo.py          # sample relationship queries
 
 ## Next steps
 
-- Elo team ratings
-- EPA / play-level features from `nflreadpy.load_pbp`
-- Gradient boosting (`HistGradientBoostingClassifier`)
-- Probability calibration + ROI evaluation vs closing lines
+- QB-adjusted Elo (rating travels with the starting quarterback)
+- Richer EPA splits (pass vs rush, success rate, early-down EPA, opponent-adjusted)
+- ROI / betting-edge evaluation vs closing lines (the metric that actually pays)
 - Link the graph into the model (coach tenure, roster continuity as features)
+- Hyperparameter tuning + walk-forward (multi-season) backtesting

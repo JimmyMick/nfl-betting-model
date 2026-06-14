@@ -1,8 +1,12 @@
-"""Build strictly pre-game features (no leakage from the game being predicted)."""
+"""Build strictly pre-game features (no leakage from the game being predicted).
+
+The feature set is composable: base recent-form features are always built, with
+optional Elo and EPA blocks layered on. ``build_features`` returns the frame and
+the list of active feature columns so callers can compare feature sets.
+"""
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from . import data as data_mod
@@ -10,49 +14,56 @@ from . import data as data_mod
 # Rolling window (number of prior games) for recent-form features.
 FORM_WINDOW = 5
 
-FEATURE_COLS = [
-    "form_pf_diff",      # home recent points-for minus away recent points-for
-    "form_pa_diff",      # home recent points-against minus away recent points-against
-    "form_margin_diff",  # home recent point margin minus away recent point margin
-    "form_winrate_diff", # home recent win rate minus away recent win rate
-    "season_winrate_diff",  # season-to-date win rate, home minus away
-    "rest_diff",         # home_rest minus away_rest
-    "div_game",          # divisional matchup flag
+BASE_FEATURES = [
+    "form_pf_diff",       # home recent points-for minus away
+    "form_pa_diff",       # home recent points-against minus away
+    "form_margin_diff",   # home recent point margin minus away
+    "form_winrate_diff",  # home recent win rate minus away
+    "season_winrate_diff",
+    "rest_diff",
+    "div_game",
 ]
+ELO_FEATURES = ["elo_diff", "elo_prob"]
+EPA_FEATURES = ["off_epa_diff", "def_epa_diff", "net_epa_diff"]
 
 
-def _add_team_form(long: pd.DataFrame) -> pd.DataFrame:
-    """Add rolling/expanding form columns to the long team-game frame.
+def _roll(frame: pd.DataFrame, col: str) -> pd.Series:
+    """Per-team rolling mean of ``col`` using only prior games (shift(1))."""
+    return frame.groupby("team", group_keys=False)[col].apply(
+        lambda s: s.shift(1).rolling(FORM_WINDOW, min_periods=1).mean()
+    )
 
-    All stats are ``shift(1)`` first so a game never sees its own result —
-    every feature uses only games that finished before kickoff.
-    """
-    g = long.groupby("team", group_keys=False)
 
-    def _roll(col: str) -> pd.Series:
-        return g[col].apply(
-            lambda s: s.shift(1).rolling(FORM_WINDOW, min_periods=1).mean()
-        )
-
-    long["form_pf"] = _roll("points_for")
-    long["form_pa"] = _roll("points_against")
+def _add_team_form(long: pd.DataFrame, extra_cols: list[str]) -> pd.DataFrame:
+    long["form_pf"] = _roll(long, "points_for")
+    long["form_pa"] = _roll(long, "points_against")
     long["form_margin"] = long["form_pf"] - long["form_pa"]
-    long["form_winrate"] = _roll("won")
-
-    # Season-to-date win rate (expanding within season, shifted).
+    long["form_winrate"] = _roll(long, "won")
     long["season_winrate"] = long.groupby(["team", "season"], group_keys=False)[
         "won"
     ].apply(lambda s: s.shift(1).expanding().mean())
-
+    for col in extra_cols:
+        long[f"{col}_form"] = _roll(long, col)
     return long
 
 
-def build_features(games: pd.DataFrame) -> pd.DataFrame:
-    """Return ``games`` augmented with model-ready feature columns + target."""
+def build_features(
+    games: pd.DataFrame,
+    epa_table: pd.DataFrame | None = None,
+    elo_table: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Return ``(features_df, feature_cols)`` for the given games."""
     long = data_mod.to_long(games)
-    long = _add_team_form(long)
+
+    extra = []
+    if epa_table is not None:
+        long = long.merge(epa_table, on=["game_id", "team"], how="left")
+        extra = ["off_epa", "def_epa"]
+
+    long = _add_team_form(long, extra)
 
     form_cols = ["form_pf", "form_pa", "form_margin", "form_winrate", "season_winrate"]
+    form_cols += [f"{c}_form" for c in extra]
     keyed = long.set_index(["game_id", "team"])[form_cols]
 
     df = games.copy()
@@ -65,26 +76,43 @@ def build_features(games: pd.DataFrame) -> pd.DataFrame:
     _lookup("home_team", "home")
     _lookup("away_team", "away")
 
+    # Base form diffs.
     df["form_pf_diff"] = df["form_pf_home"] - df["form_pf_away"]
     df["form_pa_diff"] = df["form_pa_home"] - df["form_pa_away"]
     df["form_margin_diff"] = df["form_margin_home"] - df["form_margin_away"]
     df["form_winrate_diff"] = df["form_winrate_home"] - df["form_winrate_away"]
     df["season_winrate_diff"] = df["season_winrate_home"] - df["season_winrate_away"]
-
     df["rest_diff"] = df["home_rest"].fillna(7) - df["away_rest"].fillna(7)
     df["div_game"] = df["div_game"].fillna(0).astype(float)
 
-    # Drop early-season rows with no prior-form signal on either side.
+    feature_cols = list(BASE_FEATURES)
+
+    if epa_table is not None:
+        df["off_epa_diff"] = df["off_epa_form_home"] - df["off_epa_form_away"]
+        df["def_epa_diff"] = df["def_epa_form_home"] - df["def_epa_form_away"]
+        # Net strength = offense minus defense allowed, home edge over away.
+        home_net = df["off_epa_form_home"] - df["def_epa_form_home"]
+        away_net = df["off_epa_form_away"] - df["def_epa_form_away"]
+        df["net_epa_diff"] = home_net - away_net
+        feature_cols += EPA_FEATURES
+
+    if elo_table is not None:
+        df = df.join(elo_table[ELO_FEATURES])
+        feature_cols += ELO_FEATURES
+
+    # Drop rows with no prior-form signal on either side.
     df = df.dropna(subset=["form_margin_diff", "form_winrate_diff"]).reset_index(
         drop=True
     )
-    return df
+    return df, feature_cols
 
 
 # --- Market benchmark helpers -------------------------------------------------
 
 def american_to_prob(odds: pd.Series) -> pd.Series:
     """Convert American moneyline odds to implied probability."""
+    import numpy as np
+
     odds = pd.to_numeric(odds, errors="coerce")
     return np.where(odds < 0, -odds / (-odds + 100.0), 100.0 / (odds + 100.0))
 

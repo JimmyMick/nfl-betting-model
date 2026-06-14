@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
@@ -15,12 +16,28 @@ from sklearn.preprocessing import StandardScaler
 from . import features as feat
 
 
-def build_pipeline() -> Pipeline:
-    """Impute, standardize, then fit L2-regularized logistic regression.
+def build_pipeline(kind: str = "logistic") -> Pipeline:
+    """Return a fitted-ready pipeline.
 
-    Median imputation handles early-season rows that lack a season-to-date
-    win rate, so we keep every game rather than dropping it.
+    ``logistic`` — median impute + standardize + L2 logistic regression.
+    ``gbm`` — HistGradientBoosting (handles NaNs and interactions natively).
     """
+    if kind == "gbm":
+        return Pipeline(
+            [
+                (
+                    "clf",
+                    HistGradientBoostingClassifier(
+                        max_iter=300,
+                        learning_rate=0.05,
+                        max_leaf_nodes=15,
+                        l2_regularization=1.0,
+                        early_stopping=True,
+                        random_state=0,
+                    ),
+                ),
+            ]
+        )
     return Pipeline(
         [
             ("impute", SimpleImputer(strategy="median")),
@@ -37,7 +54,6 @@ class Evaluation:
     log_loss: float
     brier: float
     auc: float
-    # Market benchmark on the same games (NaN if odds missing).
     market_accuracy: float
     market_log_loss: float
     market_brier: float
@@ -59,17 +75,16 @@ def time_split(df: pd.DataFrame, test_season: int) -> tuple[pd.DataFrame, pd.Dat
     return train, test
 
 
-def train(train_df: pd.DataFrame) -> Pipeline:
-    pipe = build_pipeline()
-    pipe.fit(train_df[feat.FEATURE_COLS], train_df["home_win"])
+def train(train_df: pd.DataFrame, feature_cols: list[str], kind: str = "logistic") -> Pipeline:
+    pipe = build_pipeline(kind)
+    pipe.fit(train_df[feature_cols], train_df["home_win"])
     return pipe
 
 
-def evaluate(pipe: Pipeline, test_df: pd.DataFrame) -> Evaluation:
+def evaluate(pipe: Pipeline, test_df: pd.DataFrame, feature_cols: list[str]) -> Evaluation:
     y = test_df["home_win"].to_numpy()
-    p = pipe.predict_proba(test_df[feat.FEATURE_COLS])[:, 1]
+    p = pipe.predict_proba(test_df[feature_cols])[:, 1]
 
-    # Market benchmark where moneyline is available.
     mkt = feat.market_home_prob(test_df).to_numpy()
     mask = ~np.isnan(mkt)
     if mask.sum() > 0:
