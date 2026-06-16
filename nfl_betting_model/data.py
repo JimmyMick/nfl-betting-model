@@ -29,14 +29,22 @@ _KEEP = [
 ]
 
 
-def load_games(seasons: Iterable[int] | None = None) -> pd.DataFrame:
-    """Return completed NFL games as a tidy pandas frame.
+def load_games(
+    seasons: Iterable[int] | None = None,
+    include_unplayed: bool = False,
+) -> pd.DataFrame:
+    """Return NFL games as a tidy pandas frame.
 
     Parameters
     ----------
     seasons:
         Iterable of season years (e.g. ``range(2010, 2025)``). ``None`` loads
         every available season.
+    include_unplayed:
+        If ``True``, also keep scheduled games that haven't been played yet
+        (``home_win`` is ``NaN`` for those). Used by the weekly inference path
+        to predict an upcoming slate. Defaults to ``False`` so training callers
+        get completed games only, exactly as before.
     """
     raw = nfl.load_schedules(seasons=True if seasons is None else list(seasons))
 
@@ -46,18 +54,27 @@ def load_games(seasons: Iterable[int] | None = None) -> pd.DataFrame:
     keep = [c for c in _KEEP if c in df.columns]
     df = df[keep].copy()
 
-    # Completed games only (both scores present).
-    df = df[df["home_score"].notna() & df["away_score"].notna()].copy()
+    played = df["home_score"].notna() & df["away_score"].notna()
+    if not include_unplayed:
+        df = df[played].copy()
+        played = pd.Series(True, index=df.index)
 
     df["gameday"] = pd.to_datetime(df["gameday"], errors="coerce")
     df = df.sort_values("gameday").reset_index(drop=True)
+    played = df["home_score"].notna() & df["away_score"].notna()
 
-    # Target: did the home team win? Ties (rare) are dropped — undefined for
-    # a binary winner model.
-    df = df[df["home_score"] != df["away_score"]].copy()
-    df["home_win"] = (df["home_score"] > df["away_score"]).astype(int)
+    # Drop played ties (rare) — undefined for a binary winner model. Unplayed
+    # games are kept with home_win = NaN.
+    df = df[~(played & (df["home_score"] == df["away_score"]))].copy()
+    played = df["home_score"].notna() & df["away_score"].notna()
 
-    return df
+    # Target: did the home team win? NaN where the game hasn't been played.
+    df["home_win"] = float("nan")
+    df.loc[played, "home_win"] = (
+        df.loc[played, "home_score"] > df.loc[played, "away_score"]
+    ).astype(float)
+
+    return df.reset_index(drop=True)
 
 
 def to_long(games: pd.DataFrame) -> pd.DataFrame:

@@ -25,6 +25,8 @@ BASE_FEATURES = [
 ]
 ELO_FEATURES = ["elo_diff", "elo_prob"]
 EPA_FEATURES = ["off_epa_diff", "def_epa_diff", "net_epa_diff"]
+MADDEN_FEATURES = ["qb_ovr_diff"]
+STARTER_FEATURES = ["ol_ovr_diff", "dl_ovr_diff", "db_ovr_diff", "starter_ovr_diff"]
 
 
 def _roll(frame: pd.DataFrame, col: str) -> pd.Series:
@@ -51,6 +53,8 @@ def build_features(
     games: pd.DataFrame,
     epa_table: pd.DataFrame | None = None,
     elo_table: pd.DataFrame | None = None,
+    qb_table: pd.DataFrame | None = None,
+    starter_table: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return ``(features_df, feature_cols)`` for the given games."""
     long = data_mod.to_long(games)
@@ -99,6 +103,27 @@ def build_features(
     if elo_table is not None:
         df = df.join(elo_table[ELO_FEATURES])
         feature_cols += ELO_FEATURES
+
+    if qb_table is not None:
+        # Starting-QB Madden OVR per (game, team) -> home minus away.
+        keyed_qb = qb_table.set_index(["game_id", "team"])["qb_ovr"]
+        home_idx = pd.MultiIndex.from_arrays([df["game_id"], df["home_team"]])
+        away_idx = pd.MultiIndex.from_arrays([df["game_id"], df["away_team"]])
+        df["qb_ovr_home"] = keyed_qb.reindex(home_idx).to_numpy()
+        df["qb_ovr_away"] = keyed_qb.reindex(away_idx).to_numpy()
+        df["qb_ovr_diff"] = df["qb_ovr_home"] - df["qb_ovr_away"]
+        feature_cols += MADDEN_FEATURES
+
+    if starter_table is not None:
+        # Starting-unit Madden OVR (OL/DL/secondary/overall) -> home minus away.
+        st = starter_table.set_index(["game_id", "team"])
+        home_idx = pd.MultiIndex.from_arrays([df["game_id"], df["home_team"]])
+        away_idx = pd.MultiIndex.from_arrays([df["game_id"], df["away_team"]])
+        for unit in ("ol_ovr", "dl_ovr", "db_ovr", "starter_ovr"):
+            home = st[unit].reindex(home_idx).to_numpy()
+            away = st[unit].reindex(away_idx).to_numpy()
+            df[f"{unit}_diff"] = home - away
+        feature_cols += STARTER_FEATURES
 
     # Drop rows with no prior-form signal on either side.
     df = df.dropna(subset=["form_margin_diff", "form_winrate_diff"]).reset_index(

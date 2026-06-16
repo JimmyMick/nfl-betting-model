@@ -72,6 +72,10 @@ def compute_elo(
         away_pre[i] = ra
         probs[i] = eh
 
+        # Unplayed (future) game: emit pre-game Elo, but don't update ratings.
+        if pd.isna(row["home_score"]) or pd.isna(row["away_score"]):
+            continue
+
         # Update from the result.
         margin = int(row["home_score"] - row["away_score"])
         s_home = 1.0 if margin > 0 else 0.0

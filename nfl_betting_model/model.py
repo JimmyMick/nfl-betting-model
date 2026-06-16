@@ -6,7 +6,9 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.frozen import FrozenEstimator
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
@@ -57,6 +59,7 @@ class Evaluation:
     market_accuracy: float
     market_log_loss: float
     market_brier: float
+    home_prob: np.ndarray = None  # model P(home win) per test game; not printed
 
     def __str__(self) -> str:
         return (
@@ -75,10 +78,34 @@ def time_split(df: pd.DataFrame, test_season: int) -> tuple[pd.DataFrame, pd.Dat
     return train, test
 
 
-def train(train_df: pd.DataFrame, feature_cols: list[str], kind: str = "logistic") -> Pipeline:
-    pipe = build_pipeline(kind)
-    pipe.fit(train_df[feature_cols], train_df["home_win"])
-    return pipe
+def train(
+    train_df: pd.DataFrame,
+    feature_cols: list[str],
+    kind: str = "logistic",
+    calibrate: str | None = None,
+):
+    """Fit the model. ``calibrate`` in {None, "isotonic", "sigmoid"}.
+
+    Calibration is time-aware: the base model is fit on every season except the
+    latest in ``train_df``, and the calibrator is fit on that held-out latest
+    season — so the mapping is learned on out-of-sample probabilities without
+    leaking the test season.
+    """
+    if not calibrate:
+        pipe = build_pipeline(kind)
+        pipe.fit(train_df[feature_cols], train_df["home_win"])
+        return pipe
+
+    seasons = sorted(train_df["season"].unique())
+    calib_season = seasons[-1]
+    core = train_df[train_df["season"] < calib_season]
+    cal = train_df[train_df["season"] == calib_season]
+
+    base = build_pipeline(kind)
+    base.fit(core[feature_cols], core["home_win"])
+    clf = CalibratedClassifierCV(FrozenEstimator(base), method=calibrate)
+    clf.fit(cal[feature_cols], cal["home_win"])
+    return clf
 
 
 def evaluate(pipe: Pipeline, test_df: pd.DataFrame, feature_cols: list[str]) -> Evaluation:
@@ -103,4 +130,5 @@ def evaluate(pipe: Pipeline, test_df: pd.DataFrame, feature_cols: list[str]) -> 
         market_accuracy=m_acc,
         market_log_loss=m_ll,
         market_brier=m_br,
+        home_prob=p,
     )

@@ -147,6 +147,30 @@ class GraphStore:
         """
         self._write(cypher, _records(rows))
 
+    def ingest_madden_ratings(self, rows: Iterable[dict]) -> int:
+        """Attach Madden ratings to a player's PLAYED_FOR edge(s) for a season.
+
+        OVR is season-specific, so it lives on the relationship (matched by
+        gsis_id + season), not the Player node. Returns the number of edges set.
+        """
+        cypher = """
+        UNWIND $rows AS row
+        MATCH (p:Player {gsis_id: row.gsis_id})-[r:PLAYED_FOR {season: row.season}]->(:Team)
+        SET r.madden_ovr = row.overallrating,
+            r.madden_speed = row.speed,
+            r.madden_acceleration = row.acceleration,
+            r.madden_awareness = row.awareness,
+            r.madden_strength = row.strength
+        RETURN count(r) AS n
+        """
+        clean = _records(rows)
+        total = 0
+        with self._driver.session() as session:
+            for i in range(0, len(clean), _BATCH):
+                batch = clean[i : i + _BATCH]
+                total += session.run(cypher, rows=batch).single()["n"]
+        return total
+
     # --- inspection ------------------------------------------------------
 
     def counts(self) -> dict[str, int]:
