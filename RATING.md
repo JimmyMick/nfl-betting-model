@@ -114,7 +114,17 @@ threshold. Aggregated into per-unit average OVR:
 - `ol_ovr` (C/G/T), `dl_ovr` (DE/DT/NT), `db_ovr` (CB/FS/SS), and `starter_ovr`
   (all starters, both sides). Snap counts begin in 2012; earlier seasons get NaN.
 
-### 2f. Market benchmark (`features.market_home_prob`)
+### 2f. Starter availability (`availability.py`)
+The one signal orthogonal to team strength: Elo/EPA rate a team's baseline
+roster but are blind to a key starter — above all the QB — being ruled out *this
+week*. From the official injury report (`load_injuries`, `report_status`), for
+each team-week we sum the **talent above replacement** of players listed
+Out/Doubtful: `weight · max(0, MaddenOVR − 65)` (Out=1.0, Doubtful=0.75). Because
+QBs carry the highest OVRs, a QB ruled out dominates the sum naturally. Exposes
+`out_avail` per team. Leak-free: the report's game-status designation is
+published days before kickoff, exactly the pre-game info a bettor holds.
+
+### 2g. Market benchmark (`features.market_home_prob`)
 The Vegas moneyline is the yardstick, not an input feature. American odds →
 implied probability for each side, then the pair is renormalized to remove vig:
 `market_home_prob = p_home / (p_home + p_away)`. Used everywhere the model is
@@ -149,6 +159,7 @@ Takes `games` plus the optional `epa_table`, `elo_table`, `qb_table`,
    - **Elo:** `elo_diff, elo_prob`.
    - **Madden QB:** `qb_ovr_diff` (home starter OVR − away starter OVR).
    - **Starters:** `ol_ovr_diff, dl_ovr_diff, db_ovr_diff, starter_ovr_diff`.
+   - **Availability:** `out_avail_diff` (home talent-out minus away).
 
 `feature_cols` lists exactly the active columns, so callers can ablate feature
 sets cleanly. The full set is 17 features.
@@ -170,7 +181,14 @@ sets cleanly. The full set is 17 features.
   calibrator (`CalibratedClassifierCV` over a `FrozenEstimator`) is fit on that
   held-out latest season. So the probability mapping is learned on out-of-sample
   predictions without touching the test season. The validated production setup is
-  **isotonic-calibrated**.
+  **sigmoid (Platt) calibrated**.
+
+> **Why sigmoid, not isotonic.** A 2021–2025 walk-forward (`calibration_study.py`)
+> found isotonic calibration on the single latest season overfits its ~285-game
+> map and detonates when that season is anomalous (calibrating 2021 on the 2020
+> COVID season pushed log loss to ~1.0). It averaged **0.728** log loss — worse
+> than uncalibrated — with ~10× the season-to-season variance. Sigmoid (two
+> parameters, stable on small samples) averages **0.624** and cuts variance ~10×.
 
 ---
 
@@ -231,7 +249,7 @@ efficient for this feature set.** Hence the pivot to a probability/preview tool.
    tables (pbp tables only on seasons with games played), and **carries forward**
    each team's latest known starter OVR onto a not-yet-played slate (a no-op for
    historical weeks).
-2. `_train_for` fits the isotonic-calibrated model on every season before the
+2. `_train_for` fits the sigmoid-calibrated model on every season before the
    target.
 3. Scores the slate, computes `edge = model_home_prob − market_home_prob`, and
    names a **key driver** per game — the largest z-scored feature diff whose sign
@@ -290,6 +308,7 @@ rather than forced single-threaded.
 | `nfl_betting_model/madden.py` | Load Madden player ratings (by gsis_id / pfr_id) |
 | `nfl_betting_model/qb.py` | Starting-QB Madden OVR per game |
 | `nfl_betting_model/starters.py` | Starting-unit (OL/DL/DB) Madden OVR per game |
+| `nfl_betting_model/availability.py` | Injury-report talent-out (availability) per team-game |
 | `nfl_betting_model/features.py` | Leak-free feature assembly + market benchmark |
 | `nfl_betting_model/model.py` | Pipelines, time-aware calibration, evaluation |
 | `nfl_betting_model/betting.py` | +EV flat-stake ROI vs the closing line |

@@ -96,8 +96,13 @@ switching tabs or revisiting a slate is instant.
 - **Features** (`nfl_betting_model/features.py`) — strictly pre-game signals with
   no leakage (every stat is `shift(1)`'d so a game never sees its own result):
   rolling 5-game form (points for/against, margin, win rate), season-to-date win
-  rate, rest-day difference, divisional flag. Composable Elo and EPA blocks layer
-  on optionally. Also derives vig-free implied probabilities from the moneyline.
+  rate, rest-day difference, divisional flag. Composable Elo, EPA, Madden
+  QB/starter, and injury-**availability** blocks layer on optionally. Also derives
+  vig-free implied probabilities from the moneyline.
+- **Availability** (`nfl_betting_model/availability.py`) — the one signal
+  orthogonal to team strength: per team-week, the Madden talent-above-replacement
+  of players the injury report rules out (QBs dominate naturally). Leak-free
+  (`report_status` is published pre-game).
 - **Elo** (`nfl_betting_model/elo.py`) — 538-style ratings with home-field
   advantage, margin-of-victory scaling, and between-season reversion to the mean.
   Ratings are read before each game and updated after, so the `elo_diff` /
@@ -108,7 +113,9 @@ switching tabs or revisiting a slate is instant.
 - **Model** (`nfl_betting_model/model.py`) — either `SimpleImputer` →
   `StandardScaler` → `LogisticRegression`, or a `HistGradientBoostingClassifier`
   (handles NaNs + interactions). Time-based split, evaluated against the market
-  (accuracy, log loss, Brier, AUC). `main.py` runs an ablation across feature
+  (accuracy, log loss, Brier, AUC). Probabilities are **sigmoid (Platt)
+  calibrated** — isotonic-on-one-season overfit its calibration map and was ~10×
+  noisier (see `calibration_study.py`). `main.py` runs an ablation across feature
   sets and both model types.
 
 ## Ablation (trained 2010–2022, tested on 2023)
