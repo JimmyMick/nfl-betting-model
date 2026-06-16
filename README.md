@@ -21,6 +21,28 @@ uv run main.py --train 2010-2022 --test 2023
 `--train` takes an inclusive season range (`2010-2022`); `--test` takes a single
 held-out season.
 
+### Weekly preview (CLI)
+
+```bash
+uv run predict.py --season 2026 --week 1 --out predictions/2026-wk01.md
+```
+
+Trains the isotonic-calibrated full-feature model on every season before the
+target, then predicts the slate from strictly pre-game features and writes a
+model-vs-market markdown table (no picks, no EV claims).
+
+### Dashboard
+
+```bash
+uv run streamlit run dashboard.py
+```
+
+Interactive shell over the weekly-preview pipeline: pick a season/week/model in
+the sidebar and browse the model-vs-market table, the biggest disagreements, an
+edge chart, and (for graded weeks) straight-up accuracy vs Vegas. The first run
+for a given slate trains the model (~30–60s); results are cached per
+slate+model.
+
 ## How it works
 
 - **Data** (`nfl_betting_model/data.py`) — loads completed games via `nflreadpy`
