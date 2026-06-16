@@ -31,6 +31,16 @@ Trains the isotonic-calibrated full-feature model on every season before the
 target, then predicts the slate from strictly pre-game features and writes a
 model-vs-market markdown table (no picks, no EV claims).
 
+### Grading / season tracker (CLI)
+
+```bash
+uv run grade.py --season 2024 --week 10 --out predictions/2024-grade-wk10.md
+```
+
+After a week is final, grades the model's straight-up picks (✓/✗) and tracks
+season-to-date accuracy and calibration (log loss / Brier) against the market.
+The Tuesday companion to the Thursday preview.
+
 ### Dashboard
 
 ```bash
