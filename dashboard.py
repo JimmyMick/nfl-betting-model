@@ -21,6 +21,8 @@ import streamlit as st
 
 from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
+from nfl_betting_model import data
+from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
 
@@ -47,6 +49,19 @@ def _grade(season: int, through_week: int, train_start: int, kind: str) -> pd.Da
         "home_win", "winner", "model_pick", "model_correct", "market_correct",
     ]
     return s[keep].reset_index(drop=True)
+
+
+@st.cache_data(show_spinner=False)
+def _teams(season: int) -> list[str]:
+    """Teams on the season's schedule (cheap — schedule only), sorted."""
+    games = data.load_games([season], include_unplayed=True)
+    return sorted(pd.unique(games[["home_team", "away_team"]].values.ravel()).tolist())
+
+
+@st.cache_data(show_spinner=False)
+def _roster(team: str, season: int) -> pd.DataFrame:
+    """Cached team roster (snap counts + Madden ratings)."""
+    return team_roster(team, season)
 
 
 def _favoured(row: pd.Series) -> str:
@@ -188,6 +203,68 @@ def render_tracker(season: int, through_week: int, train_start: int, kind: str) 
                "calibration is expected — the model is a forecaster, not a beater.")
 
 
+def render_roster(team: str, season: int, starters_only: bool) -> None:
+    with st.spinner(f"Loading {team} {season} roster…"):
+        try:
+            r = _roster(team, season)
+        except SystemExit as e:
+            st.error(str(e) or f"No roster data for {team} {season}.")
+            return
+
+    rated = r[r["overallrating"].notna()]
+    starters = r[r["starter"]]
+
+    # Headline: starter talent by unit (the same signals the model's features use).
+    st.subheader(f"{team} {season} — starter talent")
+    cols = st.columns(4)
+    qb = starters[starters["position"] == "QB"]["overallrating"]
+    units = [
+        ("QB OVR", qb),
+        ("Offense starters", starters[starters["unit"] == "Offense"]["overallrating"]),
+        ("Defense starters", starters[starters["unit"] == "Defense"]["overallrating"]),
+        ("All starters", starters["overallrating"]),
+    ]
+    for col, (label, series) in zip(cols, units):
+        val = series.dropna()
+        col.metric(label, f"{val.mean():.0f}" if len(val) else "—",
+                   f"{len(val)} rated" if label != "QB OVR" else None,
+                   delta_color="off")
+
+    # Ratings distribution by unit.
+    if not rated.empty:
+        st.subheader("Player ratings (overall) by unit")
+        chart = (
+            alt.Chart(rated).mark_circle(size=90, opacity=0.7).encode(
+                x=alt.X("overallrating:Q", title="Madden overall",
+                        scale=alt.Scale(zero=False)),
+                y=alt.Y("unit:N", title=None,
+                        sort=["Offense", "Defense", "Special teams", "Other"]),
+                color=alt.Color("starter:N", title="Starter",
+                                scale=alt.Scale(domain=[True, False],
+                                                range=["#1f77b4", "#cccccc"])),
+                tooltip=["player", "position", "overallrating",
+                         alt.Tooltip("snap_share:Q", title="Snap %", format=".0%")],
+            ).properties(height=200)
+        )
+        st.altair_chart(chart, width="stretch")
+
+    # Roster table.
+    st.subheader("Roster" + (" — starters" if starters_only else ""))
+    table = (starters if starters_only else r).copy()
+    table["Snap %"] = (table["snap_share"] * 100).round(0).astype("Int64")
+    table["Starter"] = table["starter"].map({True: "✓", False: ""})
+    show = table.rename(columns={
+        "player": "Player", "position": "Pos", "unit": "Unit",
+        "games": "GP", "overallrating": "OVR", "speed": "SPD",
+        "acceleration": "ACC", "awareness": "AWR", "strength": "STR",
+    })
+    order = [c for c in ["Player", "Pos", "Unit", "OVR", "Snap %", "Starter",
+                         "GP", "SPD", "ACC", "AWR", "STR"] if c in show.columns]
+    st.dataframe(show[order], width="stretch", hide_index=True)
+    st.caption("Starters = season-average snap share ≥ 50% on offense or defense. "
+               "Ratings are Madden launch OVR joined by player id; blanks = unrated.")
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -202,7 +279,8 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-preview_tab, tracker_tab = st.tabs(["Weekly preview", "Season tracker"])
+preview_tab, tracker_tab, roster_tab = st.tabs(
+    ["Weekly preview", "Season tracker", "Team roster"])
 
 with preview_tab:
     st.title(f"Preview — {season}")
@@ -222,3 +300,14 @@ with tracker_tab:
     else:
         st.info("Pick a completed week and **Run tracker** for the season-to-date "
                 "record, calibration, and accuracy ticker vs the market.")
+
+with roster_tab:
+    st.title(f"Team roster — {season}")
+    c1, c2 = st.columns([2, 1])
+    team = c1.selectbox("Team", _teams(int(season)), key="roster_team")
+    starters_only = c2.checkbox("Starters only", value=True, key="roster_starters")
+    if st.button("Show roster", type="primary", key="run_roster"):
+        render_roster(team, int(season), starters_only)
+    else:
+        st.info("Pick a team and **Show roster** for its starters and Madden "
+                "player ratings. Needs a season that's already underway.")

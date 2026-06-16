@@ -58,6 +58,9 @@ controls in the sidebar and two tabs:
 - **Season tracker** — season-to-date record and calibration vs the market, a
   cumulative accuracy ticker, the week-by-week table, and the latest week's
   game-by-game grades.
+- **Team roster** — a team's players for the season with Madden ratings,
+  snap-share-based starter flags, starter talent by unit, and a ratings
+  distribution. Needs a season that's already underway (snap counts).
 
 The first run for a given slate trains the model (~30–60s); results are cached.
 
