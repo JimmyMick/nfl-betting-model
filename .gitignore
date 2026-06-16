@@ -1,6 +1,9 @@
 # Run logs (scratch output)
 *.log
 
+# Auto-generated weekly outputs from the scheduled preview/grade jobs
+predictions/auto-*.md
+
 # Python
 __pycache__/
 *.py[cod]
