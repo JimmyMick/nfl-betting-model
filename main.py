@@ -14,7 +14,8 @@ from __future__ import annotations
 import argparse
 
 from nfl_betting_model import (
-    betting, data, epa as epa_mod, model, qb as qb_mod, starters as starters_mod,
+    betting, coaching as coaching_mod, data, epa as epa_mod, model,
+    qb as qb_mod, starters as starters_mod,
 )
 from nfl_betting_model.elo import compute_elo
 from nfl_betting_model.features import build_features
@@ -29,10 +30,10 @@ def _parse_range(text: str) -> range:
 
 
 def _run(games, epa_table, elo_table, test_season, label, kind, calibrate=None,
-         bets=False, qb_table=None, starter_table=None):
+         bets=False, qb_table=None, starter_table=None, coach_table=None):
     df, cols = build_features(
         games, epa_table=epa_table, elo_table=elo_table, qb_table=qb_table,
-        starter_table=starter_table,
+        starter_table=starter_table, coach_table=coach_table,
     )
     train_df, test_df = model.time_split(df, test_season)
     pipe = model.train(train_df, cols, kind=kind, calibrate=calibrate)
@@ -93,6 +94,8 @@ def main() -> None:
                     help="skip starting-QB Madden OVR feature")
     ap.add_argument("--no-starters", action="store_true",
                     help="skip starting-unit (OL/DL/secondary) OVR features")
+    ap.add_argument("--no-coaching", action="store_true",
+                    help="skip coaching (career win%% + new-regime) features")
     ap.add_argument(
         "--calibrate",
         choices=["isotonic", "sigmoid"],
@@ -140,6 +143,13 @@ def main() -> None:
         starter_table = starters_mod.starter_unit_ovr(seasons)
         print(f"  {len(starter_table)} game-team starting-unit rows")
 
+    coach_table = None
+    if not args.no_coaching:
+        print("Loading coaching features (career win% + new-regime) ...")
+        coach_table = coaching_mod.coach_features(seasons)
+        rated = coach_table["coach_winpct"].notna().sum()
+        print(f"  {len(coach_table)} game-team coach rows, {rated} with a prior record")
+
     if args.backtest:
         # Best feature set both with and without the QB rating, to isolate it.
         _backtest(games, epa_table, elo_table, test_seasons, "isotonic", seasons[0])
@@ -181,6 +191,23 @@ def main() -> None:
             _run(games, epa_table, elo_table, test_season,
                  "+ QB + Starters (OL/DL/DB)", "gbm",
                  qb_table=qb_table, starter_table=starter_table)
+
+        if coach_table is not None:
+            # Coaching isolated on top of team strength (Elo+EPA): the cleanest
+            # read on whether it adds anything orthogonal to team quality.
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + Coaching", "logistic", coach_table=coach_table)
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + Coaching", "gbm", coach_table=coach_table)
+
+            if qb_table is not None and starter_table is not None:
+                # Coaching layered on the full player-level set.
+                _run(games, epa_table, elo_table, test_season,
+                     "+ QB + Starters + Coaching", "logistic", qb_table=qb_table,
+                     starter_table=starter_table, coach_table=coach_table)
+                _run(games, epa_table, elo_table, test_season,
+                     "+ QB + Starters + Coaching", "gbm", qb_table=qb_table,
+                     starter_table=starter_table, coach_table=coach_table)
 
 
 if __name__ == "__main__":

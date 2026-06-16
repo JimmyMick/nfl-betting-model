@@ -27,6 +27,7 @@ ELO_FEATURES = ["elo_diff", "elo_prob"]
 EPA_FEATURES = ["off_epa_diff", "def_epa_diff", "net_epa_diff"]
 MADDEN_FEATURES = ["qb_ovr_diff"]
 STARTER_FEATURES = ["ol_ovr_diff", "dl_ovr_diff", "db_ovr_diff", "starter_ovr_diff"]
+COACH_FEATURES = ["coach_winpct_diff", "coach_new_diff"]
 
 
 def _roll(frame: pd.DataFrame, col: str) -> pd.Series:
@@ -55,6 +56,7 @@ def build_features(
     elo_table: pd.DataFrame | None = None,
     qb_table: pd.DataFrame | None = None,
     starter_table: pd.DataFrame | None = None,
+    coach_table: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return ``(features_df, feature_cols)`` for the given games."""
     long = data_mod.to_long(games)
@@ -124,6 +126,17 @@ def build_features(
             away = st[unit].reindex(away_idx).to_numpy()
             df[f"{unit}_diff"] = home - away
         feature_cols += STARTER_FEATURES
+
+    if coach_table is not None:
+        # Coach career win% + new-regime flag -> home minus away.
+        ct = coach_table.set_index(["game_id", "team"])
+        home_idx = pd.MultiIndex.from_arrays([df["game_id"], df["home_team"]])
+        away_idx = pd.MultiIndex.from_arrays([df["game_id"], df["away_team"]])
+        for col in ("coach_winpct", "coach_new"):
+            home = ct[col].reindex(home_idx).to_numpy()
+            away = ct[col].reindex(away_idx).to_numpy()
+            df[f"{col}_diff"] = home - away
+        feature_cols += COACH_FEATURES
 
     # Drop rows with no prior-form signal on either side.
     df = df.dropna(subset=["form_margin_diff", "form_winrate_diff"]).reset_index(
