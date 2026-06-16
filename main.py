@@ -15,7 +15,7 @@ import argparse
 
 from nfl_betting_model import (
     betting, coaching as coaching_mod, data, epa as epa_mod, model,
-    qb as qb_mod, starters as starters_mod,
+    qb as qb_mod, qb_epa as qb_epa_mod, starters as starters_mod,
 )
 from nfl_betting_model.elo import compute_elo
 from nfl_betting_model.features import build_features
@@ -30,10 +30,12 @@ def _parse_range(text: str) -> range:
 
 
 def _run(games, epa_table, elo_table, test_season, label, kind, calibrate=None,
-         bets=False, qb_table=None, starter_table=None, coach_table=None):
+         bets=False, qb_table=None, starter_table=None, coach_table=None,
+         qb_epa_table=None):
     df, cols = build_features(
         games, epa_table=epa_table, elo_table=elo_table, qb_table=qb_table,
-        starter_table=starter_table, coach_table=coach_table,
+        qb_epa_table=qb_epa_table, starter_table=starter_table,
+        coach_table=coach_table,
     )
     train_df, test_df = model.time_split(df, test_season)
     pipe = model.train(train_df, cols, kind=kind, calibrate=calibrate)
@@ -96,6 +98,8 @@ def main() -> None:
                     help="skip starting-unit (OL/DL/secondary) OVR features")
     ap.add_argument("--no-coaching", action="store_true",
                     help="skip coaching (career win%% + new-regime) features")
+    ap.add_argument("--no-qb-epa", action="store_true",
+                    help="skip per-player rolling QB EPA/play feature")
     ap.add_argument(
         "--calibrate",
         choices=["isotonic", "sigmoid"],
@@ -150,6 +154,13 @@ def main() -> None:
         rated = coach_table["coach_winpct"].notna().sum()
         print(f"  {len(coach_table)} game-team coach rows, {rated} with a prior record")
 
+    qb_epa_table = None
+    if not args.no_qb_epa:
+        print("Loading per-player rolling QB EPA/play ...")
+        qb_epa_table = qb_epa_mod.starting_qb_epa(seasons)
+        rated = qb_epa_table["qb_epa"].notna().sum()
+        print(f"  {len(qb_epa_table)} game-team starters, {rated} with prior EPA")
+
     if args.backtest:
         # Best feature set both with and without the QB rating, to isolate it.
         _backtest(games, epa_table, elo_table, test_seasons, "isotonic", seasons[0])
@@ -191,6 +202,24 @@ def main() -> None:
             _run(games, epa_table, elo_table, test_season,
                  "+ QB + Starters (OL/DL/DB)", "gbm",
                  qb_table=qb_table, starter_table=starter_table)
+
+        if qb_epa_table is not None:
+            # Per-player rolling QB EPA isolated on team strength (Elo+EPA):
+            # does QB-attributed EPA add over team off_epa it overlaps with?
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + QBepa", "logistic", qb_epa_table=qb_epa_table)
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + QBepa", "gbm", qb_epa_table=qb_epa_table)
+
+            if qb_table is not None:
+                # Head-to-head/with the static Madden QB OVR: complement or
+                # redundant? (rolling performance vs fixed preseason talent).
+                _run(games, epa_table, elo_table, test_season,
+                     "base + Elo + EPA + QB(Madden) + QBepa", "logistic",
+                     qb_table=qb_table, qb_epa_table=qb_epa_table)
+                _run(games, epa_table, elo_table, test_season,
+                     "base + Elo + EPA + QB(Madden) + QBepa", "gbm",
+                     qb_table=qb_table, qb_epa_table=qb_epa_table)
 
         if coach_table is not None:
             # Coaching isolated on top of team strength (Elo+EPA): the cleanest

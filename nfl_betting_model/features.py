@@ -26,6 +26,7 @@ BASE_FEATURES = [
 ELO_FEATURES = ["elo_diff", "elo_prob"]
 EPA_FEATURES = ["off_epa_diff", "def_epa_diff", "net_epa_diff"]
 MADDEN_FEATURES = ["qb_ovr_diff"]
+QB_EPA_FEATURES = ["qb_epa_diff"]
 STARTER_FEATURES = ["ol_ovr_diff", "dl_ovr_diff", "db_ovr_diff", "starter_ovr_diff"]
 COACH_FEATURES = ["coach_winpct_diff", "coach_new_diff"]
 
@@ -55,6 +56,7 @@ def build_features(
     epa_table: pd.DataFrame | None = None,
     elo_table: pd.DataFrame | None = None,
     qb_table: pd.DataFrame | None = None,
+    qb_epa_table: pd.DataFrame | None = None,
     starter_table: pd.DataFrame | None = None,
     coach_table: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
@@ -115,6 +117,16 @@ def build_features(
         df["qb_ovr_away"] = keyed_qb.reindex(away_idx).to_numpy()
         df["qb_ovr_diff"] = df["qb_ovr_home"] - df["qb_ovr_away"]
         feature_cols += MADDEN_FEATURES
+
+    if qb_epa_table is not None:
+        # Starting QB's rolling prior passing EPA/play -> home minus away.
+        keyed_qe = qb_epa_table.set_index(["game_id", "team"])["qb_epa"]
+        home_idx = pd.MultiIndex.from_arrays([df["game_id"], df["home_team"]])
+        away_idx = pd.MultiIndex.from_arrays([df["game_id"], df["away_team"]])
+        df["qb_epa_home"] = keyed_qe.reindex(home_idx).to_numpy()
+        df["qb_epa_away"] = keyed_qe.reindex(away_idx).to_numpy()
+        df["qb_epa_diff"] = df["qb_epa_home"] - df["qb_epa_away"]
+        feature_cols += QB_EPA_FEATURES
 
     if starter_table is not None:
         # Starting-unit Madden OVR (OL/DL/secondary/overall) -> home minus away.
