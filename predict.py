@@ -111,8 +111,15 @@ def _drivers(target: pd.DataFrame) -> list[str]:
     return out
 
 
-def predict_week(season: int, week: int, train_start: int = 2010,
-                 kind: str = "logistic") -> pd.DataFrame:
+def _prepare_frame(season: int, train_start: int,
+                   carry_week: int | None = None) -> tuple[pd.DataFrame, list[str]]:
+    """Load every season up to ``season`` and build the model feature frame.
+
+    Shared by the weekly preview and the season grader. When ``carry_week`` is
+    given, project the latest known starter OVR onto that (possibly not-yet-
+    played) week so an upcoming slate can be scored; this is a no-op for weeks
+    that already have play-by-play, so historical scoring is unaffected.
+    """
     seasons = list(range(train_start, season + 1))
     print(f"Loading {seasons[0]}-{seasons[-1]} (schedules, Elo, EPA, Madden) ...")
     games = data.load_games(seasons, include_unplayed=True)
@@ -129,27 +136,36 @@ def predict_week(season: int, week: int, train_start: int = 2010,
     qb_table = qb_mod.starting_qb_ovr(pbp_seasons)
     starter_table = starters_mod.starter_unit_ovr(pbp_seasons)
 
-    # Project starters onto not-yet-played games (carry each team's last known
-    # starter OVR forward); no-op when the slate already has play-by-play.
-    target_games = games[(games["season"] == season) & (games["week"] == week)]
-    qb_table = _carry_forward(qb_table, ["qb_ovr"], games, target_games)
-    starter_table = _carry_forward(
-        starter_table, ["ol_ovr", "dl_ovr", "db_ovr", "starter_ovr"],
-        games, target_games,
-    )
+    if carry_week is not None:
+        target_games = games[(games["season"] == season) & (games["week"] == carry_week)]
+        qb_table = _carry_forward(qb_table, ["qb_ovr"], games, target_games)
+        starter_table = _carry_forward(
+            starter_table, ["ol_ovr", "dl_ovr", "db_ovr", "starter_ovr"],
+            games, target_games,
+        )
 
-    df, cols = build_features(
+    return build_features(
         games, epa_table=epa_table, elo_table=elo_table,
         qb_table=qb_table, starter_table=starter_table,
     )
+
+
+def _train_for(df: pd.DataFrame, cols: list[str], season: int,
+               kind: str = "logistic"):
+    """Validated setup: isotonic-calibrated model fit on seasons before ``season``."""
+    train_df = df[df["season"] < season]
+    return model.train(train_df, cols, kind=kind, calibrate="isotonic")
+
+
+def predict_week(season: int, week: int, train_start: int = 2010,
+                 kind: str = "logistic") -> pd.DataFrame:
+    df, cols = _prepare_frame(season, train_start, carry_week=week)
 
     target = df[(df["season"] == season) & (df["week"] == week)].copy()
     if target.empty:
         raise SystemExit(f"No games found for {season} week {week}.")
 
-    # Validated setup: train on every season strictly before the target season.
-    train_df = df[df["season"] < season]
-    pipe = model.train(train_df, cols, kind=kind, calibrate="isotonic")
+    pipe = _train_for(df, cols, season, kind)
 
     target["model_home_prob"] = pipe.predict_proba(target[cols])[:, 1]
     target["market_home_prob"] = market_home_prob(target).to_numpy()

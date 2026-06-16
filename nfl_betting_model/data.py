@@ -60,7 +60,10 @@ def load_games(
         played = pd.Series(True, index=df.index)
 
     df["gameday"] = pd.to_datetime(df["gameday"], errors="coerce")
-    df = df.sort_values("gameday").reset_index(drop=True)
+    # game_id is a deterministic tiebreaker: same-day games would otherwise keep
+    # nflreadpy's load order, which varies between runs and leaks into isotonic
+    # calibration's tie handling (~1% probability wobble on re-run).
+    df = df.sort_values(["gameday", "game_id"]).reset_index(drop=True)
     played = df["home_score"].notna() & df["away_score"].notna()
 
     # Drop played ties (rare) — undefined for a binary winner model. Unplayed
