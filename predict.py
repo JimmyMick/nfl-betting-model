@@ -225,8 +225,11 @@ def render(target: pd.DataFrame, season: int, week: int) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Weekly NFL win-probability preview")
-    ap.add_argument("--season", type=int, required=True)
-    ap.add_argument("--week", type=int, required=True)
+    ap.add_argument("--season", type=int, help="omit with --auto")
+    ap.add_argument("--week", type=int, help="omit with --auto")
+    ap.add_argument("--auto", action="store_true",
+                    help="detect the upcoming slate from the live schedule "
+                         "(for the scheduled Thursday preview)")
     ap.add_argument("--train-start", type=int, default=2010)
     ap.add_argument("--model", choices=["logistic", "gbm"], default="logistic",
                     help="logistic = saner tail probabilities (preview default); "
@@ -234,8 +237,16 @@ def main() -> None:
     ap.add_argument("--out", default=None, help="also write the markdown to this path")
     args = ap.parse_args()
 
-    target = predict_week(args.season, args.week, args.train_start, args.model)
-    report = render(target, args.season, args.week)
+    if args.auto:
+        from nfl_betting_model.weeks import detect_target
+        season, week = detect_target("preview", args.season)
+    elif args.season is not None and args.week is not None:
+        season, week = args.season, args.week
+    else:
+        ap.error("provide --season and --week, or --auto")
+
+    target = predict_week(season, week, args.train_start, args.model)
+    report = render(target, season, week)
     print("\n" + report)
 
     if args.out:

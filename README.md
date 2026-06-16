@@ -29,7 +29,9 @@ uv run predict.py --season 2026 --week 1 --out predictions/2026-wk01.md
 
 Trains the isotonic-calibrated full-feature model on every season before the
 target, then predicts the slate from strictly pre-game features and writes a
-model-vs-market markdown table (no picks, no EV claims).
+model-vs-market markdown table (no picks, no EV claims). Pass `--auto` instead of
+`--season/--week` to target the upcoming slate detected from the live schedule
+(used by the scheduled Thursday preview).
 
 ### Grading / season tracker (CLI)
 
@@ -39,7 +41,8 @@ uv run grade.py --season 2024 --week 10 --out predictions/2024-grade-wk10.md
 
 After a week is final, grades the model's straight-up picks (✓/✗) and tracks
 season-to-date accuracy and calibration (log loss / Brier) against the market.
-The Tuesday companion to the Thursday preview.
+The Tuesday companion to the Thursday preview. `--auto` targets the most recent
+completed week from the live schedule.
 
 ### Dashboard
 
@@ -47,11 +50,16 @@ The Tuesday companion to the Thursday preview.
 uv run streamlit run dashboard.py
 ```
 
-Interactive shell over the weekly-preview pipeline: pick a season/week/model in
-the sidebar and browse the model-vs-market table, the biggest disagreements, an
-edge chart, and (for graded weeks) straight-up accuracy vs Vegas. The first run
-for a given slate trains the model (~30–60s); results are cached per
-slate+model.
+Interactive shell over the pipeline, with shared season/model/train-start
+controls in the sidebar and two tabs:
+
+- **Weekly preview** — the model-vs-market table, the biggest disagreements, and
+  an edge chart for a chosen week.
+- **Season tracker** — season-to-date record and calibration vs the market, a
+  cumulative accuracy ticker, the week-by-week table, and the latest week's
+  game-by-game grades.
+
+The first run for a given slate trains the model (~30–60s); results are cached.
 
 ## How it works
 

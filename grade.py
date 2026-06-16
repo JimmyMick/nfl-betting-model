@@ -148,16 +148,27 @@ def render(s: pd.DataFrame, season: int, through_week: int) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Grade model picks vs the market")
-    ap.add_argument("--season", type=int, required=True)
-    ap.add_argument("--week", type=int, required=True,
-                    help="grade the season through this completed week")
+    ap.add_argument("--season", type=int, help="omit with --auto")
+    ap.add_argument("--week", type=int, help="grade through this completed week; "
+                    "omit with --auto")
+    ap.add_argument("--auto", action="store_true",
+                    help="detect the most recent completed week from the live "
+                         "schedule (for the scheduled Tuesday grade)")
     ap.add_argument("--train-start", type=int, default=2010)
     ap.add_argument("--model", choices=["logistic", "gbm"], default="logistic")
     ap.add_argument("--out", default=None, help="also write the markdown to this path")
     args = ap.parse_args()
 
-    s = grade_season(args.season, args.week, args.train_start, args.model)
-    report = render(s, args.season, args.week)
+    if args.auto:
+        from nfl_betting_model.weeks import detect_target
+        season, week = detect_target("grade", args.season)
+    elif args.season is not None and args.week is not None:
+        season, week = args.season, args.week
+    else:
+        ap.error("provide --season and --week, or --auto")
+
+    s = grade_season(season, week, args.train_start, args.model)
+    report = render(s, season, week)
     print("\n" + report)
 
     if args.out:
