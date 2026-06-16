@@ -46,23 +46,48 @@ completed week from the live schedule.
 
 ### Dashboard
 
+An interactive Streamlit shell over the whole pipeline — the preview, grading,
+and roster views without touching the CLI.
+
+**Launch it:**
+
 ```bash
 uv run streamlit run dashboard.py
 ```
 
-Interactive shell over the pipeline, with shared season/model/train-start
-controls in the sidebar and two tabs:
+This opens the app at <http://localhost:8501> (Streamlit usually opens your
+browser automatically; if not, visit that URL). To run it without auto-opening a
+browser — e.g. on a remote host — add `--server.headless true`. Stop the server
+with `Ctrl-C` in the terminal.
 
-- **Weekly preview** — the model-vs-market table, the biggest disagreements, and
-  an edge chart for a chosen week.
-- **Season tracker** — season-to-date record and calibration vs the market, a
-  cumulative accuracy ticker, the week-by-week table, and the latest week's
-  game-by-game grades.
-- **Team roster** — a team's players for the season with Madden ratings,
-  snap-share-based starter flags, starter talent by unit, and a ratings
-  distribution. Needs a season that's already underway (snap counts).
+**Sidebar controls** (shared across all tabs):
 
-The first run for a given slate trains the model (~30–60s); results are cached.
+- **Season** — which NFL season to load.
+- **Week** — the slate to preview (Weekly preview tab).
+- **Model** — `logistic` (default; saner tail probabilities) or `gbm`
+  (marginally better aggregate calibration, uglier tails).
+- **Train start** — the first season used for training; the model always trains
+  on every season from here up to (but not including) the one being scored.
+
+Change any control and the affected tab recomputes. The first run for a given
+slate/model trains the model (~30–60s); results are then **cached**, so
+switching tabs or revisiting a slate is instant.
+
+**Tabs:**
+
+- **Weekly preview** — pick a season + week, then read the model-vs-market table
+  (sorted by disagreement), the biggest model-vs-market gaps as metric cards, and
+  an edge bar chart. Use it as a "what does the model see that the market
+  doesn't" view — no picks, no bet sizing. Works on upcoming 2026 weeks via
+  carry-forward of each team's latest starter ratings.
+- **Season tracker** — season-to-date straight-up record and calibration (log
+  loss / Brier) vs the market, a cumulative accuracy ticker chart, the
+  week-by-week table, and the latest completed week's game-by-game ✓/✗ grades.
+- **Team roster** — pick a team to see its players for the season with Madden
+  ratings, snap-share-based starter flags, starter talent by unit, and a ratings
+  distribution. **Note:** this tab needs snap-count data, which only exists once a
+  season is underway — choose a past season (e.g. 2024); a not-yet-started season
+  like 2026 will show a friendly "no data yet" message.
 
 ## How it works
 
