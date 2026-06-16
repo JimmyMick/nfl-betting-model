@@ -24,7 +24,8 @@ import numpy as np
 import pandas as pd
 
 from nfl_betting_model import (
-    data, epa as epa_mod, model, qb as qb_mod, starters as starters_mod,
+    availability as avail_mod, data, epa as epa_mod, model, qb as qb_mod,
+    starters as starters_mod,
 )
 from nfl_betting_model.elo import compute_elo
 from nfl_betting_model.features import build_features, market_home_prob
@@ -37,6 +38,9 @@ DRIVER_FEATURES = {
     "elo_diff": "Elo",
     "starter_ovr_diff": "roster talent",
     "form_margin_diff": "recent margin",
+    # Sign-flipped from out_avail_diff so positive favours the home team (i.e.
+    # the away side has more talent ruled out). Built in predict_week.
+    "avail_home_edge": "injury availability",
 }
 
 
@@ -144,17 +148,29 @@ def _prepare_frame(season: int, train_start: int,
             games, target_games,
         )
 
+    # Availability comes from the injury report, which is published pre-game for
+    # upcoming weeks too — so it needs no carry-forward. Not-yet-reported weeks
+    # default to 0 (healthy), which is the correct neutral.
+    avail_table = avail_mod.team_out_talent(seasons)
+
     return build_features(
         games, epa_table=epa_table, elo_table=elo_table,
-        qb_table=qb_table, starter_table=starter_table,
+        qb_table=qb_table, starter_table=starter_table, avail_table=avail_table,
     )
 
 
 def _train_for(df: pd.DataFrame, cols: list[str], season: int,
                kind: str = "logistic"):
-    """Validated setup: isotonic-calibrated model fit on seasons before ``season``."""
+    """Validated setup: sigmoid-calibrated model fit on seasons before ``season``.
+
+    Sigmoid (Platt) calibration, not isotonic: a 2021-2025 walk-forward showed
+    isotonic-on-one-season averaged 0.728 log loss (worse than uncalibrated)
+    with ~10x the season-to-season variance — it overfits the single calibration
+    season (and detonates on 2020 COVID). Sigmoid drops mean log loss to ~0.624
+    and cuts variance ~10x. See calibration_study.py.
+    """
     train_df = df[df["season"] < season]
-    return model.train(train_df, cols, kind=kind, calibrate="isotonic")
+    return model.train(train_df, cols, kind=kind, calibrate="sigmoid")
 
 
 def predict_week(season: int, week: int, train_start: int = 2010,
@@ -170,6 +186,9 @@ def predict_week(season: int, week: int, train_start: int = 2010,
     target["model_home_prob"] = pipe.predict_proba(target[cols])[:, 1]
     target["market_home_prob"] = market_home_prob(target).to_numpy()
     target["edge"] = target["model_home_prob"] - target["market_home_prob"]
+    # Home-oriented availability edge (positive = away side more depleted) so the
+    # driver attribution shares the model's home/away sign convention.
+    target["avail_home_edge"] = -pd.to_numeric(target["out_avail_diff"], errors="coerce")
     target["driver"] = _drivers(target)
     return target.sort_values("edge", key=lambda s: s.abs(), ascending=False)
 

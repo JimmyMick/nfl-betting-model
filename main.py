@@ -14,8 +14,9 @@ from __future__ import annotations
 import argparse
 
 from nfl_betting_model import (
-    betting, coaching as coaching_mod, data, epa as epa_mod, model,
-    qb as qb_mod, qb_epa as qb_epa_mod, starters as starters_mod,
+    availability as avail_mod, betting, coaching as coaching_mod, data,
+    epa as epa_mod, model, qb as qb_mod, qb_epa as qb_epa_mod,
+    starters as starters_mod,
 )
 from nfl_betting_model.elo import compute_elo
 from nfl_betting_model.features import build_features
@@ -31,11 +32,11 @@ def _parse_range(text: str) -> range:
 
 def _run(games, epa_table, elo_table, test_season, label, kind, calibrate=None,
          bets=False, qb_table=None, starter_table=None, coach_table=None,
-         qb_epa_table=None):
+         qb_epa_table=None, avail_table=None):
     df, cols = build_features(
         games, epa_table=epa_table, elo_table=elo_table, qb_table=qb_table,
         qb_epa_table=qb_epa_table, starter_table=starter_table,
-        coach_table=coach_table,
+        coach_table=coach_table, avail_table=avail_table,
     )
     train_df, test_df = model.time_split(df, test_season)
     pipe = model.train(train_df, cols, kind=kind, calibrate=calibrate)
@@ -100,6 +101,8 @@ def main() -> None:
                     help="skip coaching (career win%% + new-regime) features")
     ap.add_argument("--no-qb-epa", action="store_true",
                     help="skip per-player rolling QB EPA/play feature")
+    ap.add_argument("--no-availability", action="store_true",
+                    help="skip injury-report talent-out (availability) feature")
     ap.add_argument(
         "--calibrate",
         choices=["isotonic", "sigmoid"],
@@ -160,6 +163,13 @@ def main() -> None:
         qb_epa_table = qb_epa_mod.starting_qb_epa(seasons)
         rated = qb_epa_table["qb_epa"].notna().sum()
         print(f"  {len(qb_epa_table)} game-team starters, {rated} with prior EPA")
+
+    avail_table = None
+    if not args.no_availability:
+        print("Loading injury-report talent-out (availability) ...")
+        avail_table = avail_mod.team_out_talent(seasons)
+        nonzero = (avail_table["out_avail"] > 0).sum()
+        print(f"  {len(avail_table)} game-team rows, {nonzero} with talent ruled out")
 
     if args.backtest:
         # Best feature set both with and without the QB rating, to isolate it.
@@ -237,6 +247,26 @@ def main() -> None:
                 _run(games, epa_table, elo_table, test_season,
                      "+ QB + Starters + Coaching", "gbm", qb_table=qb_table,
                      starter_table=starter_table, coach_table=coach_table)
+
+        if avail_table is not None:
+            # Injury-report availability isolated on team strength (Elo+EPA):
+            # the one signal meant to be orthogonal to a team's baseline rating.
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + Availability", "logistic",
+                 avail_table=avail_table)
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + Availability", "gbm", avail_table=avail_table)
+
+            if qb_table is not None and starter_table is not None:
+                # Availability layered on the full validated player-level set.
+                _run(games, epa_table, elo_table, test_season,
+                     "+ QB + Starters + Availability", "logistic",
+                     qb_table=qb_table, starter_table=starter_table,
+                     avail_table=avail_table)
+                _run(games, epa_table, elo_table, test_season,
+                     "+ QB + Starters + Availability", "gbm",
+                     qb_table=qb_table, starter_table=starter_table,
+                     avail_table=avail_table)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ MADDEN_FEATURES = ["qb_ovr_diff"]
 QB_EPA_FEATURES = ["qb_epa_diff"]
 STARTER_FEATURES = ["ol_ovr_diff", "dl_ovr_diff", "db_ovr_diff", "starter_ovr_diff"]
 COACH_FEATURES = ["coach_winpct_diff", "coach_new_diff"]
+AVAILABILITY_FEATURES = ["out_avail_diff"]
 
 
 def _roll(frame: pd.DataFrame, col: str) -> pd.Series:
@@ -59,6 +60,7 @@ def build_features(
     qb_epa_table: pd.DataFrame | None = None,
     starter_table: pd.DataFrame | None = None,
     coach_table: pd.DataFrame | None = None,
+    avail_table: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return ``(features_df, feature_cols)`` for the given games."""
     long = data_mod.to_long(games)
@@ -149,6 +151,16 @@ def build_features(
             away = ct[col].reindex(away_idx).to_numpy()
             df[f"{col}_diff"] = home - away
         feature_cols += COACH_FEATURES
+
+    if avail_table is not None:
+        # Talent ruled out by the injury report -> home minus away.
+        keyed_av = avail_table.set_index(["game_id", "team"])["out_avail"]
+        home_idx = pd.MultiIndex.from_arrays([df["game_id"], df["home_team"]])
+        away_idx = pd.MultiIndex.from_arrays([df["game_id"], df["away_team"]])
+        home = keyed_av.reindex(home_idx).to_numpy()
+        away = keyed_av.reindex(away_idx).to_numpy()
+        df["out_avail_diff"] = home - away
+        feature_cols += AVAILABILITY_FEATURES
 
     # Drop rows with no prior-form signal on either side.
     df = df.dropna(subset=["form_margin_diff", "form_winrate_diff"]).reset_index(
