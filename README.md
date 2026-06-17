@@ -76,10 +76,12 @@ switching tabs or revisiting a slate is instant.
 **Tabs:**
 
 - **Weekly preview** — pick a season + week, then read the model-vs-market table
-  (sorted by disagreement), the biggest model-vs-market gaps as metric cards, and
-  an edge bar chart. Use it as a "what does the model see that the market
-  doesn't" view — no picks, no bet sizing. Works on upcoming 2026 weeks via
-  carry-forward of each team's latest starter ratings.
+  (the slate is sorted by model win probability, most confident games first), the
+  biggest model-vs-market gaps as metric cards, and an edge bar chart. Use it as a
+  "what does the model see that the market doesn't" view — no picks, no bet
+  sizing. Works on upcoming 2026 weeks via carry-forward of each team's latest
+  starter ratings. A **⬇ Download preview as PDF** button exports the summary and
+  sorted slate as a one-page landscape report.
 - **Season tracker** — season-to-date straight-up record and calibration (log
   loss / Brier) vs the market, a cumulative accuracy ticker chart, the
   week-by-week table, and the latest completed week's game-by-game ✓/✗ grades.

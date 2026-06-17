@@ -15,9 +15,12 @@ Run with:
 
 from __future__ import annotations
 
+import datetime as dt
+
 import altair as alt
 import pandas as pd
 import streamlit as st
+from fpdf import FPDF
 
 from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
@@ -92,6 +95,67 @@ def _display_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _ascii(s: object) -> str:
+    """Latin-1-safe text for fpdf core fonts (drivers use a Unicode arrow)."""
+    s = str(s).replace("→", "->").replace("–", "-").replace("—", "-")
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
+def _preview_pdf(season: int, week: int, kind: str, table: pd.DataFrame,
+                 disagreements: list[str], acc_line: str | None) -> bytes:
+    """Render the preview report (summary + sorted slate) to PDF bytes."""
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, _ascii(f"NFL Model - Preview: {season} Week {week}"),
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(110)
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    pdf.cell(0, 6, _ascii(f"{kind} model - generated {stamp} - "
+                          "sorted by model win probability"),
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(0)
+    pdf.ln(2)
+
+    if disagreements:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "Biggest model-vs-market disagreements",
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 10)
+        for line in disagreements:
+            pdf.cell(0, 5.5, _ascii(f"  - {line}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+    if acc_line:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 6, _ascii(acc_line), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, "Slate", new_x="LMARGIN", new_y="NEXT")
+
+    cols = list(table.columns)
+    weights = {"Matchup": 24, "Model": 16, "Market": 16, "Edge": 18,
+               "Key driver": 42, "Result": 18}
+    col_widths = tuple(weights.get(c, 20) for c in cols)
+    pdf.set_font("Helvetica", "", 9)
+    with pdf.table(col_widths=col_widths, text_align="LEFT",
+                   first_row_as_headings=True) as t:
+        t.row([_ascii(c) for c in cols])
+        for _, r in table.iterrows():
+            t.row([_ascii(r[c]) for c in cols])
+
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(110)
+    pdf.ln(2)
+    pdf.multi_cell(0, 4, _ascii(
+        "Probability/preview tool. Model edges reflect disagreement with the "
+        "closing line, not a profitable betting signal (moneyline is efficient)."))
+    return bytes(pdf.output())
+
+
 def render_preview(season: int, week: int, train_start: int, kind: str) -> None:
     with st.spinner(f"Training on {train_start}–{season - 1} and predicting the slate…"):
         try:
@@ -104,12 +168,17 @@ def render_preview(season: int, week: int, train_start: int, kind: str) -> None:
     by_edge = df.reindex(df["edge"].abs().sort_values(ascending=False).index)
 
     st.subheader("Biggest model-vs-market disagreements")
+    disagreements = []
     for col, (_, r) in zip(st.columns(3), by_edge.head(3).iterrows()):
         side = _favoured(r)
         col.metric(label=f"{r['away_team']} @ {r['home_team']}",
                    value=f"{side} +{abs(r['edge']):.0%}",
                    delta=r["driver"], delta_color="off")
+        disagreements.append(
+            f"{r['away_team']} @ {r['home_team']}: {side} +{abs(r['edge']):.0%} "
+            f"({r['driver']})")
 
+    acc_line = None
     if graded:
         played = df[df["home_win"].notna()]
         picks = (played["model_home_prob"] >= 0.5).astype(int)
@@ -121,13 +190,22 @@ def render_preview(season: int, week: int, train_start: int, kind: str) -> None:
                   f"{int((picks == played['home_win']).sum())}/{len(played)}")
         c2.metric("Market straight-up", f"{mkt_acc:.0%}")
         c3.metric("vs market", f"{acc - mkt_acc:+.0%}")
+        acc_line = (f"Straight-up: model {acc:.0%} vs market {mkt_acc:.0%} "
+                    f"({acc - mkt_acc:+.0%}) on {len(played)} graded games")
 
     st.subheader("Slate")
     # Sort the slate by the model's winning-side probability (most confident
     # games first, coin-flips last) — distinct from the edge-ranked cards above.
     confidence = df["model_home_prob"].apply(lambda p: max(p, 1 - p))
     by_prob = df.reindex(confidence.sort_values(ascending=False).index)
-    st.dataframe(_display_table(by_prob, graded), width="stretch", hide_index=True)
+    display = _display_table(by_prob, graded)
+    st.dataframe(display, width="stretch", hide_index=True)
+
+    pdf_bytes = _preview_pdf(season, week, kind, display, disagreements, acc_line)
+    st.download_button(
+        "⬇ Download preview as PDF", data=pdf_bytes,
+        file_name=f"nfl-preview-{season}-wk{week:02d}-{kind}.pdf",
+        mime="application/pdf", key="download_preview_pdf")
 
     st.subheader("Edge by game (model minus market, toward favoured side)")
     chart_df = df.copy()
@@ -290,7 +368,11 @@ with preview_tab:
     st.title(f"Preview — {season}")
     week = st.number_input("Week", min_value=1, max_value=22, value=1, step=1)
     if st.button("Run preview", type="primary", key="run_preview"):
-        render_preview(int(season), int(week), int(train_start), kind)
+        st.session_state["preview"] = (int(season), int(week), int(train_start), kind)
+    # Persist the last-run preview so the rerun triggered by the PDF download
+    # button (or any widget) re-renders it instead of blanking the tab.
+    if "preview" in st.session_state:
+        render_preview(*st.session_state["preview"])
     else:
         st.info("Pick a week and **Run preview**. First run for a slate trains "
                 "the model (~30–60s); results are cached.")
