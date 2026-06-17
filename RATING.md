@@ -130,6 +130,30 @@ implied probability for each side, then the pair is renormalized to remove vig:
 `market_home_prob = p_home / (p_home + p_away)`. Used everywhere the model is
 scored against "the market."
 
+### 2h. Documented dead-ends (tested, not in the model)
+Every candidate below was vetted the same way availability was — sigmoid
+walk-forward, production config — and **washed out**. They are kept in-repo,
+gated and out of the live path, so they aren't re-tried from scratch. The
+through-line: the moneyline market already prices everything *knowable in
+advance*, so only a signal orthogonal to team strength (availability — who is
+literally not suited up) has ever added value.
+
+- **PFF grades** — rejected pre-build: paywalled with no free mirror, and
+  retrospective per-game grades would need rolling like EPA (leak risk), not
+  fixing like preseason Madden OVR.
+- **Coaching** (`coaching.py`): career win% + new-regime flag — **null**. Career
+  win% just relabels team quality Elo/EPA already capture; the new-regime
+  discontinuity added nothing orthogonal.
+- **Per-player QB EPA** (`qb_epa.py`): each starter's own rolling passing
+  EPA/play — **null**. Redundant with team `off_epa` in a pass-driven league —
+  the team's EPA *is* mostly its QB.
+- **Weather** (`weather.py`): raw `wind`/`cold`/`wind_x_edge` is a *thin,
+  likely-priced* 4/5 signal (tiny margins, no live forecast plumbing built); the
+  `climate_mismatch_diff` "warm/dome team in the cold" acclimation spot is a
+  clean **null** (2/5) — the most precisely it targets the dome-in-the-cold
+  trope, the more completely the line has already eaten it. See
+  `validate_weather.py` / `validate_climate.py`.
+
 ---
 
 ## 3. Why these are leak-free

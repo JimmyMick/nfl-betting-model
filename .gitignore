@@ -26,3 +26,6 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Editor / vault
+.obsidian/

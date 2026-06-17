@@ -7,6 +7,7 @@ the list of active feature columns so callers can compare feature sets.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from . import data as data_mod
@@ -30,6 +31,15 @@ QB_EPA_FEATURES = ["qb_epa_diff"]
 STARTER_FEATURES = ["ol_ovr_diff", "dl_ovr_diff", "db_ovr_diff", "starter_ovr_diff"]
 COACH_FEATURES = ["coach_winpct_diff", "coach_new_diff"]
 AVAILABILITY_FEATURES = ["out_avail_diff"]
+# Game-level weather. ``wind_x_edge`` (wind x strength edge) is the asymmetry
+# term — it is only appended when a strength edge (net EPA or Elo) is present.
+WEATHER_FEATURES = ["wind", "cold"]
+# Temperature (F) at/above which "cold" is zero; below it, cold severity grows.
+COLD_THRESHOLD = 50.0
+# Differential acclimation (away team yanked out of its home climate). Built
+# from a per-game table; positive favors home. Tests Jim's "dome team in the
+# cold" hypothesis as a feature distinct from raw cold/wind.
+CLIMATE_FEATURES = ["climate_mismatch_diff"]
 
 
 def _roll(frame: pd.DataFrame, col: str) -> pd.Series:
@@ -61,6 +71,8 @@ def build_features(
     starter_table: pd.DataFrame | None = None,
     coach_table: pd.DataFrame | None = None,
     avail_table: pd.DataFrame | None = None,
+    weather_table: pd.DataFrame | None = None,
+    climate_table: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return ``(features_df, feature_cols)`` for the given games."""
     long = data_mod.to_long(games)
@@ -161,6 +173,33 @@ def build_features(
         away = keyed_av.reindex(away_idx).to_numpy()
         df["out_avail_diff"] = home - away
         feature_cols += AVAILABILITY_FEATURES
+
+    if weather_table is not None:
+        # Game-level conditions (same for both teams) keyed by game_id.
+        wx = weather_table.set_index("game_id")
+        df["wind"] = wx["wind"].reindex(df["game_id"]).to_numpy()
+        temp = wx["temp"].reindex(df["game_id"]).to_numpy()
+        df["cold"] = np.clip(COLD_THRESHOLD - temp, 0.0, None)
+        feature_cols += WEATHER_FEATURES
+        # Asymmetry term: wind compresses the stronger team's edge toward a coin
+        # flip (it suppresses the pass-dependent favorite more). Use net EPA when
+        # present, else Elo; skip if neither strength block is active (the term
+        # would be a degenerate constant).
+        if "net_epa_diff" in df.columns:
+            edge = df["net_epa_diff"].to_numpy()
+        elif "elo_diff" in df.columns:
+            edge = df["elo_diff"].to_numpy()
+        else:
+            edge = None
+        if edge is not None:
+            df["wind_x_edge"] = df["wind"].to_numpy() * edge
+            feature_cols.append("wind_x_edge")
+
+    if climate_table is not None:
+        # Differential acclimation, keyed by game_id (positive favors home).
+        cm = climate_table.set_index("game_id")["climate_mismatch_diff"]
+        df["climate_mismatch_diff"] = cm.reindex(df["game_id"]).fillna(0.0).to_numpy()
+        feature_cols += CLIMATE_FEATURES
 
     # Drop rows with no prior-form signal on either side.
     df = df.dropna(subset=["form_margin_diff", "form_winrate_diff"]).reset_index(

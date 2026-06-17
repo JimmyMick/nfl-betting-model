@@ -16,7 +16,7 @@ import argparse
 from nfl_betting_model import (
     availability as avail_mod, betting, coaching as coaching_mod, data,
     epa as epa_mod, model, qb as qb_mod, qb_epa as qb_epa_mod,
-    starters as starters_mod,
+    starters as starters_mod, weather as weather_mod,
 )
 from nfl_betting_model.elo import compute_elo
 from nfl_betting_model.features import build_features
@@ -32,11 +32,12 @@ def _parse_range(text: str) -> range:
 
 def _run(games, epa_table, elo_table, test_season, label, kind, calibrate=None,
          bets=False, qb_table=None, starter_table=None, coach_table=None,
-         qb_epa_table=None, avail_table=None):
+         qb_epa_table=None, avail_table=None, weather_table=None):
     df, cols = build_features(
         games, epa_table=epa_table, elo_table=elo_table, qb_table=qb_table,
         qb_epa_table=qb_epa_table, starter_table=starter_table,
         coach_table=coach_table, avail_table=avail_table,
+        weather_table=weather_table,
     )
     train_df, test_df = model.time_split(df, test_season)
     pipe = model.train(train_df, cols, kind=kind, calibrate=calibrate)
@@ -103,6 +104,8 @@ def main() -> None:
                     help="skip per-player rolling QB EPA/play feature")
     ap.add_argument("--no-availability", action="store_true",
                     help="skip injury-report talent-out (availability) feature")
+    ap.add_argument("--no-weather", action="store_true",
+                    help="skip game-time weather (wind/temp) feature")
     ap.add_argument(
         "--calibrate",
         choices=["isotonic", "sigmoid"],
@@ -170,6 +173,13 @@ def main() -> None:
         avail_table = avail_mod.team_out_talent(seasons)
         nonzero = (avail_table["out_avail"] > 0).sum()
         print(f"  {len(avail_table)} game-team rows, {nonzero} with talent ruled out")
+
+    weather_table = None
+    if not args.no_weather:
+        print("Loading game-time weather (wind/temp) ...")
+        weather_table = weather_mod.game_weather(list(seasons))
+        outdoor = (~weather_table["indoor"]).sum()
+        print(f"  {len(weather_table)} games, {outdoor} outdoor (weather-exposed)")
 
     if args.backtest:
         # Best feature set both with and without the QB rating, to isolate it.
@@ -267,6 +277,29 @@ def main() -> None:
                      "+ QB + Starters + Availability", "gbm",
                      qb_table=qb_table, starter_table=starter_table,
                      avail_table=avail_table)
+
+        if weather_table is not None:
+            # Weather isolated on team strength (Elo+EPA): does wind/cold and
+            # the wind x edge interaction add anything orthogonal to team
+            # quality, or does the market already price the conditions?
+            # VERDICT (sigmoid walk-forward 2021-2025): raw weather is thin and
+            # likely priced (4/5 seasons, tiny margins); the climate-mismatch
+            # variant is a clean null (2/5). Documented dead-end, kept gated and
+            # out of the live path. See weather.py docstring + validate_climate.py.
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + Weather", "logistic",
+                 weather_table=weather_table)
+            _run(games, epa_table, elo_table, test_season,
+                 "base + Elo + EPA + Weather", "gbm", weather_table=weather_table)
+
+            if qb_table is not None and starter_table is not None:
+                # Weather layered on the full validated player-level set.
+                _run(games, epa_table, elo_table, test_season,
+                     "+ QB + Starters + Weather", "logistic", qb_table=qb_table,
+                     starter_table=starter_table, weather_table=weather_table)
+                _run(games, epa_table, elo_table, test_season,
+                     "+ QB + Starters + Weather", "gbm", qb_table=qb_table,
+                     starter_table=starter_table, weather_table=weather_table)
 
 
 if __name__ == "__main__":
