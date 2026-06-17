@@ -75,21 +75,85 @@ switching tabs or revisiting a slate is instant.
 
 **Tabs:**
 
-- **Weekly preview** — pick a season + week, then read the model-vs-market table
-  (the slate is sorted by model win probability, most confident games first), the
-  biggest model-vs-market gaps as metric cards, and an edge bar chart. Use it as a
-  "what does the model see that the market doesn't" view — no picks, no bet
-  sizing. Works on upcoming 2026 weeks via carry-forward of each team's latest
-  starter ratings. A **⬇ Download preview as PDF** button exports the summary and
-  sorted slate as a one-page landscape report.
-- **Season tracker** — season-to-date straight-up record and calibration (log
-  loss / Brier) vs the market, a cumulative accuracy ticker chart, the
-  week-by-week table, and the latest completed week's game-by-game ✓/✗ grades.
-- **Team roster** — pick a team to see its players for the season with Madden
-  ratings, snap-share-based starter flags, starter talent by unit, and a ratings
-  distribution. **Note:** this tab needs snap-count data, which only exists once a
-  season is underway — choose a past season (e.g. 2024); a not-yet-started season
-  like 2026 will show a friendly "no data yet" message.
+- **Weekly preview** — pick a season + week and click **Run preview**: the
+  model-vs-market table, the biggest disagreements as metric cards, and an edge
+  bar chart. A "what does the model see that the market doesn't" view — no picks,
+  no bet sizing. Works on upcoming 2026 weeks via carry-forward of each team's
+  latest starter ratings.
+- **Season tracker** — pick a completed week and click **Run tracker** for the
+  season-to-date straight-up record and calibration (log loss / Brier) vs the
+  market, a cumulative accuracy ticker chart, the week-by-week table, and the
+  latest completed week's game-by-game ✓/✗ grades.
+- **Team roster** — pick a team and click **Show roster** for its players with
+  Madden ratings, snap-share-based starter flags, starter talent by unit, and a
+  ratings distribution. **Note:** this tab needs snap-count data, which only
+  exists once a season is underway — choose a past season (e.g. 2024); a
+  not-yet-started season like 2026 will show a friendly "no data yet" message.
+
+#### Reading the Weekly preview
+
+The tab has four parts, top to bottom:
+
+1. **Biggest model-vs-market disagreements** — the three games where the model
+   differs most from the closing line, each shown as a card:
+   `BUF @ HOU / BUF +19% / roster talent → BUF`. Read it as matchup, edge, key
+   driver (all three defined below).
+2. **Straight-up accuracy** (graded/past weeks only) — the model's win-pick
+   accuracy vs the market's, on games already played.
+3. **Slate** — every game, **sorted by model win probability** (most confident
+   first, coin-flips last). Columns:
+
+   | Column | Meaning |
+   |---|---|
+   | **Matchup** | `AWAY @ HOME` — away team first, home team second. |
+   | **Model** | The model's favoured side + its win probability, e.g. `BUF 74%`. |
+   | **Market** | The same, implied by the closing moneyline, e.g. `BUF 55%`. |
+   | **Edge** | How much *more* the model likes its side than the market does (model minus market), on the favoured side, e.g. `BUF +19%`. A **disagreement** measure, not a margin of victory and not a bet. |
+   | **Key driver** | The single factor pushing the model toward its pick hardest (see table below), e.g. `roster talent → BUF`. |
+   | **Result** | On graded weeks only: the actual winner + ✓/✗ for the model's pick. |
+
+4. **Edge by game** — the same edges as a bar chart, longest disagreement on top.
+
+   A **⬇ Download preview as PDF** button exports the summary + sorted slate as a
+   one-page landscape report.
+
+**Key-driver vocabulary** — the driver names the largest standardized pre-game
+gap pointing toward the model's pick. It's an explanation aid, not the whole
+model (which combines all signals):
+
+| Shown as | Underlying signal |
+|---|---|
+| QB rating | starting-QB Madden overall gap |
+| roster talent | starter OL/DL/DB overall gap |
+| net EPA/play | offense-minus-defense efficiency gap |
+| Elo | overall team-strength rating gap |
+| recent margin | recent scoring-margin form |
+| injury availability | talent ruled out (inactives) gap |
+| model interactions | no single gap dominates; the combination drove the pick |
+
+> **A big edge is not a betting signal.** It means the model disagrees with an
+> efficient market — which is usually the model being wrong, not the market.
+> Five feature experiments confirmed the moneyline is not beatable here; this is
+> a calibrated *forecaster*, not a tip sheet.
+
+#### Reading the Season tracker
+
+- **Model vs Market straight-up** — win-pick records and the gap between them.
+  Expect the model to land within ~1–3 points of the market, not beat it.
+- **Calibration (log loss / Brier)** — lower is better; "market-grade" means the
+  two are within a few thousandths. This is the bar the model actually clears.
+- **Accuracy ticker** — cumulative pick accuracy by week, model vs market.
+- **Week-by-week table** + **latest-week ✓/✗ grades** — the game-level detail.
+
+#### Reading the Team roster
+
+- **Starter talent by unit** — average Madden overall for QB / Offense / Defense
+  / all starters; these are the same signals the model's `roster talent` and
+  `QB rating` drivers come from.
+- **Ratings distribution** — each player as a dot by overall rating and unit,
+  starters highlighted.
+- **Roster table** — per-player position, snap share, starter flag (season-avg
+  snap share ≥ 50% on offense or defense), and key Madden attributes.
 
 ## How it works
 
