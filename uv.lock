@@ -474,6 +474,7 @@ dependencies = [
     { name = "polars" },
     { name = "pyarrow" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "streamlit" },
 ]
 
@@ -487,6 +488,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.41.2" },
     { name = "pyarrow", specifier = ">=24.0.0" },
     { name = "scikit-learn", specifier = ">=1.9.0" },
+    { name = "scipy", specifier = ">=1.17.1" },
     { name = "streamlit", specifier = ">=1.40.0" },
 ]
 
