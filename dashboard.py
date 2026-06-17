@@ -123,7 +123,11 @@ def render_preview(season: int, week: int, train_start: int, kind: str) -> None:
         c3.metric("vs market", f"{acc - mkt_acc:+.0%}")
 
     st.subheader("Slate")
-    st.dataframe(_display_table(by_edge, graded), width="stretch", hide_index=True)
+    # Sort the slate by the model's winning-side probability (most confident
+    # games first, coin-flips last) — distinct from the edge-ranked cards above.
+    confidence = df["model_home_prob"].apply(lambda p: max(p, 1 - p))
+    by_prob = df.reindex(confidence.sort_values(ascending=False).index)
+    st.dataframe(_display_table(by_prob, graded), width="stretch", hide_index=True)
 
     st.subheader("Edge by game (model minus market, toward favoured side)")
     chart_df = df.copy()
