@@ -254,6 +254,9 @@ def main() -> None:
                     help="logistic = saner tail probabilities (preview default); "
                          "gbm = marginally better aggregate calibration, uglier tails")
     ap.add_argument("--out", default=None, help="also write the markdown to this path")
+    ap.add_argument("--export-dir", nargs="?", const="", default=None,
+                    help="also export the slate as CSV here for the cloud "
+                         "dashboard (bare flag uses predictions/cloud)")
     args = ap.parse_args()
 
     if args.auto:
@@ -273,6 +276,12 @@ def main() -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(report + "\n")
         print(f"\nWrote {path}")
+
+    if args.export_dir is not None:
+        from nfl_betting_model import cloud
+        out_dir = Path(args.export_dir) if args.export_dir else cloud.ARTIFACT_DIR
+        cloud.write_preview_artifacts(target, season, week, out_dir)
+        print(f"Exported cloud preview artifact to {out_dir}")
 
 
 if __name__ == "__main__":

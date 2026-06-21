@@ -1,0 +1,10 @@
+# Dependencies for the CLOUD dashboard only (streamlit_app.py on Streamlit
+# Community Cloud). The cloud app renders pre-exported artifacts and does NO
+# training, so it needs only this light set — not the full pipeline stack
+# (nflreadpy / polars / neo4j / fpdf), which stays in pyproject.toml for local
+# work. Pinned to the versions verified locally.
+streamlit==1.58.0
+pandas==3.0.3
+numpy==2.4.6
+scikit-learn==1.9.0
+altair==6.2.1

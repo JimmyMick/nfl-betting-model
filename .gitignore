@@ -27,6 +27,10 @@ __pycache__/
 # Re-include the expert pick'em sheets — they're the record, not scratch data.
 !predictions/picks/*.csv
 
+# Re-include the cloud dashboard artifacts (exported results the deployed
+# read-only app renders). Small CSVs, meant to be committed + pushed.
+!predictions/cloud/*.csv
+
 # OS
 .DS_Store
 

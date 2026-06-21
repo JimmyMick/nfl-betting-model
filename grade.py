@@ -195,6 +195,10 @@ def main() -> None:
     ap.add_argument("--train-start", type=int, default=2010)
     ap.add_argument("--model", choices=["logistic", "gbm"], default="logistic")
     ap.add_argument("--out", default=None, help="also write the markdown to this path")
+    ap.add_argument("--export-dir", nargs="?", const="", default=None,
+                    help="also export graded games + scored picks as CSV here "
+                         "for the cloud dashboard (bare flag uses "
+                         "predictions/cloud)")
     args = ap.parse_args()
 
     if args.auto:
@@ -218,6 +222,12 @@ def main() -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(report + "\n")
         print(f"\nWrote {path}")
+
+    if args.export_dir is not None:
+        from nfl_betting_model import cloud
+        out_dir = Path(args.export_dir) if args.export_dir else cloud.ARTIFACT_DIR
+        cloud.write_grade_artifacts(s, scored, season, week, out_dir)
+        print(f"Exported cloud artifacts to {out_dir}")
 
 
 if __name__ == "__main__":

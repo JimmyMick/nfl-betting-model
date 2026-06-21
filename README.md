@@ -195,6 +195,35 @@ model (which combines all signals):
 - **Roster table** — per-player position, snap share, starter flag (season-avg
   snap share ≥ 50% on offense or defense), and key Madden attributes.
 
+### Cloud dashboard (Streamlit Community Cloud)
+
+`dashboard.py` trains the model live, which is too heavy for the free tier's
+~1 GB. So the cloud app (`streamlit_app.py`) is a **read-only viewer**: the local
+weekly runs export their results as small CSVs under `predictions/cloud/`, those
+get committed + pushed, and the deployed app just renders them — no training, no
+`nflreadpy` fetch, no Madden data needed in the cloud. Its dependencies are the
+light set in `requirements.txt` (streamlit / pandas / numpy / sklearn / altair),
+separate from the full pipeline stack in `pyproject.toml`.
+
+**Export the artifacts** (piggybacks on the training the weekly runs already do):
+
+```bash
+uv run grade.py   --season 2026 --week 5 --export-dir   # graded games + scored picks
+uv run predict.py --season 2026 --week 6 --export-dir   # latest preview slate
+```
+
+`--export-dir` with no value writes to `predictions/cloud/`; pass a path to
+override. This drops `graded_games.csv`, `scored_picks.csv`, `latest_preview.csv`
+and a `meta.json` (season / week / timestamps). Commit and push them, and the
+deployed app updates on its next load.
+
+**Deploy:** push the repo to GitHub, then on [share.streamlit.io](https://share.streamlit.io)
+create an app pointing at this repo with **`streamlit_app.py`** as the main file.
+It installs `requirements.txt` and serves the three artifact-backed tabs
+(Pick'em leaderboard, Season tracker, Weekly preview) — the tabs appear only once
+their artifacts exist. Empty leaderboard until picks are recorded and a week is
+graded.
+
 ## How it works
 
 - **Data** (`nfl_betting_model/data.py`) — loads completed games via `nflreadpy`
