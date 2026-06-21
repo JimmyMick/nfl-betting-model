@@ -24,6 +24,9 @@ __pycache__/
 # Re-include seed data (global gitignore excludes *.csv)
 !data/owners.csv
 
+# Re-include the expert pick'em sheets — they're the record, not scratch data.
+!predictions/picks/*.csv
+
 # OS
 .DS_Store
 

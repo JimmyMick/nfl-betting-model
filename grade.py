@@ -25,6 +25,7 @@ import pandas as pd
 from sklearn.metrics import brier_score_loss, log_loss
 
 from predict import _prepare_frame, _train_for
+from nfl_betting_model import picks as picks_mod
 from nfl_betting_model.features import market_home_prob
 
 
@@ -102,7 +103,42 @@ def weekly_summary(s: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def render(s: pd.DataFrame, season: int, through_week: int) -> str:
+def _md_table(df: pd.DataFrame, bold_first_col: bool = False) -> list[str]:
+    """Render a DataFrame as GitHub-markdown table lines."""
+    lines = ["| " + " | ".join(df.columns) + " |",
+             "|" + "|".join(["---"] * len(df.columns)) + "|"]
+    for _, r in df.iterrows():
+        lines.append("| " + " | ".join(str(c) for c in r) + " |")
+    return lines
+
+
+def render_picks(scored: pd.DataFrame, s: pd.DataFrame,
+                 through_week: int) -> list[str]:
+    """Pick'em leaderboard section: season standings + this week's head-to-head."""
+    if scored is None or scored.empty:
+        return []
+    lines = ["", "## Pick'em leaderboard", ""]
+    board = picks_mod.leaderboard(scored, s)
+    lines.append("_Each player vs the model **on the games they picked**. "
+                 "Brier / log loss use picks that carried a confidence._")
+    lines.append("")
+    lines += _md_table(board)
+
+    this_week = scored[scored["week"] == through_week]
+    if not this_week.empty:
+        lines += ["", f"### Week {through_week} picks", ""]
+        wk = (this_week.assign(ok=this_week["correct"])
+              .groupby("player")
+              .agg(Picks=("correct", "size"), Hits=("correct", "sum"))
+              .reset_index())
+        wk["Record"] = wk["Hits"].astype(str) + "-" + (wk["Picks"] - wk["Hits"]).astype(str)
+        wk = wk[["player", "Record", "Picks"]].rename(columns={"player": "Player"})
+        lines += _md_table(wk)
+    return lines
+
+
+def render(s: pd.DataFrame, season: int, through_week: int,
+           scored: pd.DataFrame | None = None) -> str:
     m_acc = s["model_correct"].mean()
     k_acc = s["market_correct"].mean()
     m_ll, m_br, k_ll, k_br = _calibration(s)
@@ -143,6 +179,8 @@ def render(s: pd.DataFrame, season: int, through_week: int) -> str:
     for _, r in summary.iterrows():
         cells = [f"**{c}**" if r["Week"] == "Season" else str(c) for c in r]
         lines.append("| " + " | ".join(cells) + " |")
+
+    lines += render_picks(scored, s, through_week)
     return "\n".join(lines)
 
 
@@ -168,7 +206,11 @@ def main() -> None:
         ap.error("provide --season and --week, or --auto")
 
     s = grade_season(season, week, args.train_start, args.model)
-    report = render(s, season, week)
+
+    all_picks = picks_mod.load_all_picks(season, week)
+    scored = picks_mod.score(all_picks, s) if not all_picks.empty else None
+
+    report = render(s, season, week, scored)
     print("\n" + report)
 
     if args.out:

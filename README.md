@@ -44,10 +44,31 @@ season-to-date accuracy and calibration (log loss / Brier) against the market.
 The Tuesday companion to the Thursday preview. `--auto` targets the most recent
 completed week from the live schedule.
 
+### Expert pick'em tracker (CLI)
+
+Track your own picks — and your friends' — against the model, on the same games,
+all season. Each participant picks a **winner** and a **confidence** (50–100) per
+game; the grader scores everyone on straight-up accuracy plus calibration
+(Brier / log loss), exactly the footing the model gets.
+
+```bash
+# 1. List participants — one name per line — in predictions/picks/players.txt
+# 2. Seed a blank sheet for the week (auto-filled from that week's schedule):
+uv run picks.py --season 2026 --week 1        # or --auto for the upcoming slate
+# 3. Fill in the 'pick' (team abbrev) and 'confidence' columns, then grade:
+uv run grade.py --season 2026 --week 1
+```
+
+Picks live in `predictions/picks/{season}-wk{NN}.csv` (one row per game × player,
+git-tracked as the season's record). Leaving a `confidence` blank still counts a
+pick toward the win/loss record — it's just excluded from the Brier / log-loss
+calibration columns. The leaderboard prints automatically at the bottom of every
+`grade.py` run whenever picks exist, and has its own dashboard tab.
+
 ### Dashboard
 
 An interactive Streamlit shell over the whole pipeline — the preview, grading,
-and roster views without touching the CLI.
+pick'em, and roster views without touching the CLI.
 
 **Launch it:**
 
@@ -84,6 +105,12 @@ switching tabs or revisiting a slate is instant.
   season-to-date straight-up record and calibration (log loss / Brier) vs the
   market, a cumulative accuracy ticker chart, the week-by-week table, and the
   latest completed week's game-by-game ✓/✗ grades.
+- **Pick'em leaderboard** — pick a completed week and click **Run leaderboard**
+  for the season standings of you + your friends vs the model: each player's
+  record, their accuracy minus the model's *on the games they picked* ("vs
+  Model"), Brier / log loss, an accuracy bar chart, and the latest week's
+  game-by-game head-to-head. Reads the `predictions/picks/*.csv` sheets; shows a
+  friendly prompt if none are filled yet.
 - **Team roster** — pick a team and click **Show roster** for its players with
   Madden ratings, snap-share-based starter flags, starter talent by unit, and a
   ratings distribution. **Note:** this tab needs snap-count data, which only
@@ -144,6 +171,19 @@ model (which combines all signals):
   two are within a few thousandths. This is the bar the model actually clears.
 - **Accuracy ticker** — cumulative pick accuracy by week, model vs market.
 - **Week-by-week table** + **latest-week ✓/✗ grades** — the game-level detail.
+
+#### Reading the Pick'em leaderboard
+
+- **Standings** — players ranked by straight-up accuracy, with their record and
+  **vs Model** (their accuracy minus the model's over the *same* games they
+  picked). A positive "vs Model" means they're beating the forecaster on their
+  own slate — the headline number.
+- **Brier / Log loss** — calibration of each player's confidences (lower is
+  better), comparable to the model's own numbers in the Season tracker. Computed
+  only over picks that carried a confidence, so a player who skips confidences
+  still gets a win/loss record but no calibration score.
+- **Accuracy bar** + **game-by-game head-to-head** — who's hot, and exactly which
+  games each person nailed or missed in the latest week.
 
 #### Reading the Team roster
 

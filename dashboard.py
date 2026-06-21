@@ -24,7 +24,7 @@ from fpdf import FPDF
 
 from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
-from nfl_betting_model import data
+from nfl_betting_model import data, picks as picks_mod
 from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
@@ -48,8 +48,9 @@ def _grade(season: int, through_week: int, train_start: int, kind: str) -> pd.Da
     """Cached wrapper around the season grader."""
     s = grade_season(season, through_week, train_start, kind)
     keep = [
-        "week", "home_team", "away_team", "model_home_prob", "market_home_prob",
-        "home_win", "winner", "model_pick", "model_correct", "market_correct",
+        "game_id", "week", "home_team", "away_team", "model_home_prob",
+        "market_home_prob", "home_win", "winner", "model_pick", "model_correct",
+        "market_correct",
     ]
     return s[keep].reset_index(drop=True)
 
@@ -347,6 +348,73 @@ def render_roster(team: str, season: int, starters_only: bool) -> None:
                "Ratings are Madden launch OVR joined by player id; blanks = unrated.")
 
 
+def render_pickem(season: int, through_week: int, train_start: int, kind: str) -> None:
+    with st.spinner(f"Grading {season} and scoring picks…"):
+        try:
+            s = _grade(season, through_week, train_start, kind)
+        except SystemExit as e:
+            st.error(str(e) or f"Nothing to grade for {season}.")
+            return
+
+    all_picks = picks_mod.load_all_picks(season, through_week)
+    if all_picks.empty:
+        st.info(
+            f"No picks found for {season} (through Week {through_week}). Seed a "
+            "week with `uv run picks.py --season {0} --week N`, fill in the "
+            "`pick`/`confidence` columns, then re-run.".format(season))
+        return
+
+    scored = picks_mod.score(all_picks, s)
+    if scored.empty:
+        st.warning("Picks were found but none matched a completed game yet.")
+        return
+
+    board = picks_mod.leaderboard(scored, s)
+
+    st.subheader(f"Standings — through Week {int(s['week'].max())}")
+    leader = board.iloc[0]
+    cols = st.columns(min(len(board), 4))
+    for col, (_, r) in zip(cols, board.iterrows()):
+        col.metric(r["Player"], r["Record"], f"vs model {r['vs Model']}",
+                   delta_color="off")
+    st.caption(f"🏆 Leading: **{leader['Player']}** ({leader['Record']}). "
+               "“vs Model” is each player’s accuracy minus the model’s over the "
+               "same games they picked.")
+
+    st.dataframe(board, width="stretch", hide_index=True)
+
+    # Accuracy bar — who's beating the model baseline.
+    chart_df = board.copy()
+    chart_df["AccPct"] = scored.groupby("player")["correct"].mean().reindex(
+        chart_df["Player"]).to_numpy() * 100
+    bar = (
+        alt.Chart(chart_df).mark_bar().encode(
+            x=alt.X("AccPct:Q", title="Straight-up accuracy (%)"),
+            y=alt.Y("Player:N", sort="-x", title=None),
+            color=alt.Color("AccPct:Q", scale=alt.Scale(scheme="greens"),
+                            legend=None),
+            tooltip=["Player", "Record", "vs Model", "Brier", "Log loss"],
+        ).properties(height=max(140, 34 * len(chart_df)))
+    )
+    st.altair_chart(bar, width="stretch")
+
+    # This week's head-to-head.
+    this_week = scored[scored["week"] == int(s["week"].max())]
+    if not this_week.empty:
+        st.subheader(f"Week {int(s['week'].max())} — game by game")
+        wk = this_week.assign(
+            Matchup=this_week["away_team"] + " @ " + this_week["home_team"],
+            Result=this_week.apply(
+                lambda r: f"{r['pick']} {'✓' if r['correct'] else '✗'}", axis=1),
+        )
+        pivot = wk.pivot_table(index=["Matchup"], columns="player",
+                               values="Result", aggfunc="first").reset_index()
+        st.dataframe(pivot, width="stretch", hide_index=True)
+
+    st.caption("Picks come from predictions/picks/*.csv (one row per game/player). "
+               "Brier / log loss use only picks that carried a confidence.")
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -361,8 +429,8 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-preview_tab, tracker_tab, roster_tab = st.tabs(
-    ["Weekly preview", "Season tracker", "Team roster"])
+preview_tab, tracker_tab, pickem_tab, roster_tab = st.tabs(
+    ["Weekly preview", "Season tracker", "Pick'em leaderboard", "Team roster"])
 
 with preview_tab:
     st.title(f"Preview — {season}")
@@ -386,6 +454,17 @@ with tracker_tab:
     else:
         st.info("Pick a completed week and **Run tracker** for the season-to-date "
                 "record, calibration, and accuracy ticker vs the market.")
+
+with pickem_tab:
+    st.title(f"Pick'em leaderboard — {season}")
+    through_pk = st.number_input("Through week", min_value=1, max_value=22, value=1,
+                                 step=1, key="pickem_week")
+    if st.button("Run leaderboard", type="primary", key="run_pickem"):
+        render_pickem(int(season), int(through_pk), int(train_start), kind)
+    else:
+        st.info("Tracks you and your friends vs the model. Seed a week with "
+                "`uv run picks.py --season {0} --week N`, fill in everyone's "
+                "`pick`/`confidence`, then **Run leaderboard**.".format(int(season)))
 
 with roster_tab:
     st.title(f"Team roster — {season}")
