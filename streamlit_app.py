@@ -25,6 +25,43 @@ st.set_page_config(page_title="NFL model — leaderboard", page_icon="🏈",
                    layout="wide")
 
 
+# ── Optional Descope (OIDC) sign-in gate ──────────────────────────────────────
+# Uses Streamlit's native OIDC login. Entirely inert until an [auth] block is
+# configured in the app's secrets, so the app keeps working open before setup.
+# Configure a provider named [auth.descope] and (optionally) an
+# [access] allowed_emails list to restrict who gets in.
+def _auth_configured() -> bool:
+    try:
+        return "auth" in st.secrets
+    except Exception:
+        return False
+
+
+def _require_login() -> None:
+    if not _auth_configured():
+        return  # open mode — no auth secrets configured yet
+    if not st.user.is_logged_in:
+        st.title("🏈 NFL model — pick'em & tracker")
+        st.write("This leaderboard is private. Sign in to continue.")
+        st.button("Log in with Descope", type="primary",
+                  on_click=st.login, args=["descope"])
+        st.stop()
+
+    email = getattr(st.user, "email", None)
+    try:
+        allowed = list(st.secrets.get("access", {}).get("allowed_emails", []))
+    except Exception:
+        allowed = []
+    if allowed and email not in allowed:
+        st.error(f"{email or 'This account'} isn't on the access list for this app.")
+        st.button("Log out", on_click=st.logout)
+        st.stop()
+
+    with st.sidebar:
+        st.caption(f"Signed in as {getattr(st.user, 'name', None) or email}")
+        st.button("Log out", on_click=st.logout)
+
+
 # ── Small grade helpers (reimplemented here to keep cloud imports light — the
 #    originals live in grade.py, which pulls in the heavy training stack). ──────
 def _record(correct: pd.Series) -> str:
@@ -185,6 +222,8 @@ def render_preview(preview: pd.DataFrame) -> None:
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
+_require_login()
+
 st.title("🏈 NFL model — pick'em & tracker")
 
 art = cloud.load_artifacts()

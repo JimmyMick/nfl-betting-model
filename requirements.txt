@@ -8,3 +8,6 @@ pandas==3.0.3
 numpy==2.4.6
 scikit-learn==1.9.0
 altair==6.2.1
+# Required by Streamlit's native OIDC login (st.login/st.user) for the optional
+# Descope sign-in gate. Inert unless [auth] secrets are configured.
+Authlib>=1.3.2

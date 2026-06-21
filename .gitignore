@@ -21,6 +21,10 @@ __pycache__/
 # Secrets / local env
 .env
 
+# Streamlit secrets (Descope client secret etc.) — configure in the Community
+# Cloud app settings, never commit. The .example template is fine to track.
+.streamlit/secrets.toml
+
 # Re-include seed data (global gitignore excludes *.csv)
 !data/owners.csv
 
