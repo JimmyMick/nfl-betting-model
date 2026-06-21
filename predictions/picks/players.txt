@@ -2,3 +2,7 @@
 # These names become the 'player' column when a week is seeded (uv run picks.py).
 # Keep them stable across the season so the leaderboard accumulates correctly.
 Jim
+Mike
+Tunk
+Clayton
+Eman
