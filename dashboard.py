@@ -270,6 +270,27 @@ def render_tracker(season: int, through_week: int, train_start: int, kind: str) 
     )
     st.altair_chart(line, width="stretch")
 
+    # The model's single most-confident pick each week vs. the actual result.
+    conf = s["model_home_prob"].apply(lambda p: max(p, 1 - p))
+    sc = s.assign(_conf=conf)
+    top_rows = []
+    for wk_no, grp in sc.groupby("week"):
+        r = grp.loc[grp["_conf"].idxmax()]
+        top_rows.append({
+            "Week": str(int(wk_no)),
+            "Matchup": f"{r['away_team']} @ {r['home_team']}",
+            "Top pick": r["model_pick"],
+            "Confidence": f"{r['_conf']:.0%}",
+            "Actual": r["winner"],
+            "Result": "✓" if r["model_correct"] else "✗",
+        })
+    top = pd.DataFrame(top_rows)
+    st.subheader("Top pick of the week (most confident)")
+    st.metric("Top-pick record", _record(top["Result"] == "✓"))
+    st.dataframe(top, width="stretch", hide_index=True)
+    st.caption("Each week's single highest-confidence model pick vs. the actual "
+               "result — the model's “lock of the week.”")
+
     st.subheader("Week-by-week")
     st.dataframe(weekly_summary(s), width="stretch", hide_index=True)
 
