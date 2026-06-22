@@ -24,7 +24,7 @@ from fpdf import FPDF
 
 from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
-from nfl_betting_model import data, picks as picks_mod
+from nfl_betting_model import data, picks as picks_mod, submit as submit_mod
 from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
@@ -442,6 +442,70 @@ def render_pickem(season: int, through_week: int, train_start: int, kind: str) -
                "Brier / log loss use only picks that carried a confidence.")
 
 
+@st.cache_data(show_spinner=False)
+def _week_games(season: int, week: int) -> pd.DataFrame:
+    """That week's slate (away/home), schedule only — no training."""
+    games = data.load_games([season], include_unplayed=True)
+    gw = games[(games["season"] == season) & (games["week"] == week)]
+    return gw.sort_values(["gameday", "game_id"])[["away_team", "home_team"]].reset_index(
+        drop=True)
+
+
+def render_make_picks(season: int, week: int, player: str) -> None:
+    try:
+        games = _week_games(season, week)
+    except Exception as e:  # noqa: BLE001
+        st.error(f"Couldn't load the schedule: {e}")
+        return
+    if games.empty:
+        st.warning(f"No games found for {season} Week {week}.")
+        return
+
+    # Prefill from this player's existing rows in the sheet, if any.
+    path = picks_mod.week_path(season, week)
+    prior: dict[str, dict] = {}
+    if path.exists():
+        cur = pd.read_csv(path, dtype={"game_id": str})
+        cur = cur[cur["player"].astype(str).str.strip() == player]
+        for _, r in cur.iterrows():
+            prior[str(r["game_id"])] = {
+                "pick": str(r["pick"]) if pd.notna(r["pick"]) else "",
+                "confidence": r["confidence"]}
+
+    st.caption(f"Picking as **{player}** — {season} Week {week}. Confidence "
+               "50 = coin-flip, 100 = lock. Submitting overwrites your picks "
+               "for this week; everyone else's are preserved.")
+    with st.form("local_make_picks"):
+        selections: dict[str, dict] = {}
+        for _, g in games.iterrows():
+            away, home = g["away_team"], g["home_team"]
+            gid = submit_mod.game_id(season, week, away, home)
+            pre = prior.get(gid, {})
+            opts = [away, home]
+            idx = opts.index(pre["pick"]) if pre.get("pick") in opts else 0
+            c1, c2 = st.columns([2, 1])
+            pick = c1.radio(f"{away} @ {home}", opts, index=idx, horizontal=True,
+                            key=f"lpick_{gid}")
+            try:
+                conf_default = int(float(pre.get("confidence")))
+            except (TypeError, ValueError):
+                conf_default = 50
+            conf = c2.slider("confidence", 50, 100, conf_default,
+                             key=f"lconf_{gid}", label_visibility="collapsed")
+            selections[gid] = {"pick": pick, "confidence": conf}
+        submitted = st.form_submit_button("Save my picks", type="primary")
+
+    if submitted:
+        current = path.read_text() if path.exists() else None
+        text = submit_mod.merge_player_picks(current, season, week, games,
+                                             player, selections)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        st.success(f"Saved {len(selections)} picks for {player} → "
+                   f"{path.relative_to(path.parents[2])}. Commit the CSV to share "
+                   "it; the Tuesday grade run scores it.")
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -452,12 +516,13 @@ kind = st.sidebar.radio(
 )
 train_start = st.sidebar.slider("Train from season", 2002, season - 1, 2010)
 st.sidebar.caption(
-    "Isotonic-calibrated full-feature model, trained on every season before the "
+    "Sigmoid-calibrated full-feature model, trained on every season before the "
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-preview_tab, tracker_tab, pickem_tab, roster_tab = st.tabs(
-    ["Weekly preview", "Season tracker", "Pick'em leaderboard", "Team roster"])
+preview_tab, makepicks_tab, tracker_tab, pickem_tab, roster_tab = st.tabs(
+    ["Weekly preview", "Make picks", "Season tracker", "Pick'em leaderboard",
+     "Team roster"])
 
 with preview_tab:
     st.title(f"Preview — {season}")
@@ -471,6 +536,25 @@ with preview_tab:
     else:
         st.info("Pick a week and **Run preview**. First run for a slate trains "
                 "the model (~30–60s); results are cached.")
+
+with makepicks_tab:
+    st.title(f"Make picks — {season}")
+    _players = picks_mod.load_players()
+    if not _players:
+        st.info("No players yet. Add names (one per line) to "
+                "`predictions/picks/players.txt`.")
+    else:
+        c1, c2 = st.columns([1, 1])
+        mp_player = c1.selectbox("You are", _players, key="mp_player")
+        mp_week = c2.number_input("Week", min_value=1, max_value=22, value=1,
+                                  step=1, key="mp_week")
+        if st.button("Load games", type="primary", key="run_makepicks"):
+            st.session_state["makepicks"] = (int(season), int(mp_week), mp_player)
+        if "makepicks" in st.session_state:
+            render_make_picks(*st.session_state["makepicks"])
+        else:
+            st.info("Pick your name and week, then **Load games** to fill in "
+                    "winners and confidence.")
 
 with tracker_tab:
     st.title(f"Season tracker — {season}")
