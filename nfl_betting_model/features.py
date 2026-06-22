@@ -26,6 +26,10 @@ BASE_FEATURES = [
 ]
 ELO_FEATURES = ["elo_diff", "elo_prob"]
 EPA_FEATURES = ["off_epa_diff", "def_epa_diff", "net_epa_diff"]
+# Second, experimental EPA block (e.g. opponent-adjusted early-down EPA from
+# epa_oa.py). Gated behind ``epa2_table``; inert in the live path. Lets a study
+# test a richer EPA flavour *alongside* the raw EPA rather than only swapping it.
+EPA2_FEATURES = ["off_epa2_diff", "def_epa2_diff", "net_epa2_diff"]
 MADDEN_FEATURES = ["qb_ovr_diff"]
 QB_EPA_FEATURES = ["qb_epa_diff"]
 STARTER_FEATURES = ["ol_ovr_diff", "dl_ovr_diff", "db_ovr_diff", "starter_ovr_diff"]
@@ -65,6 +69,7 @@ def _add_team_form(long: pd.DataFrame, extra_cols: list[str]) -> pd.DataFrame:
 def build_features(
     games: pd.DataFrame,
     epa_table: pd.DataFrame | None = None,
+    epa2_table: pd.DataFrame | None = None,
     elo_table: pd.DataFrame | None = None,
     qb_table: pd.DataFrame | None = None,
     qb_epa_table: pd.DataFrame | None = None,
@@ -81,6 +86,12 @@ def build_features(
     if epa_table is not None:
         long = long.merge(epa_table, on=["game_id", "team"], how="left")
         extra = ["off_epa", "def_epa"]
+
+    if epa2_table is not None:
+        t2 = epa2_table.rename(columns={"off_epa": "off_epa2", "def_epa": "def_epa2"})
+        long = long.merge(t2[["game_id", "team", "off_epa2", "def_epa2"]],
+                          on=["game_id", "team"], how="left")
+        extra += ["off_epa2", "def_epa2"]
 
     long = _add_team_form(long, extra)
 
@@ -117,6 +128,14 @@ def build_features(
         away_net = df["off_epa_form_away"] - df["def_epa_form_away"]
         df["net_epa_diff"] = home_net - away_net
         feature_cols += EPA_FEATURES
+
+    if epa2_table is not None:
+        df["off_epa2_diff"] = df["off_epa2_form_home"] - df["off_epa2_form_away"]
+        df["def_epa2_diff"] = df["def_epa2_form_home"] - df["def_epa2_form_away"]
+        home_net2 = df["off_epa2_form_home"] - df["def_epa2_form_home"]
+        away_net2 = df["off_epa2_form_away"] - df["def_epa2_form_away"]
+        df["net_epa2_diff"] = home_net2 - away_net2
+        feature_cols += EPA2_FEATURES
 
     if elo_table is not None:
         df = df.join(elo_table[ELO_FEATURES])

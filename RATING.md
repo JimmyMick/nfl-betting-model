@@ -153,6 +153,21 @@ literally not suited up) has ever added value.
   clean **null** (2/5) — the most precisely it targets the dome-in-the-cold
   trope, the more completely the line has already eaten it. See
   `validate_weather.py` / `validate_climate.py`.
+- **Opponent-adjusted early-down EPA** (`epa_oa.py`): a "richer" EPA flavour —
+  restricted to 1st/2nd down (the stickiest snaps) and credited for the
+  defense/offense faced, using each opponent's *prior-games* baseline so the
+  adjustment is leak-free. **Null — slightly negative.** *Replacing* raw EPA
+  improved 1/5 held-out seasons; *adding* it beside raw EPA improved **0/5** on
+  logloss, Brier, **and AUC** (2021–2025, isolation Elo+EPA base). AUC is
+  ranking-only, so this isn't a calibration wobble — the feature adds *noise*,
+  not signal. Two reasons it fails: it's a sharper thermometer for team strength
+  the market already prices (same lesson as per-player QB EPA), and restricting
+  to early downs halves the play sample, so each game's estimate is noisier for
+  a "purity" the line doesn't reward. The FULL (+QB+Starters) variant wasn't run
+  — isolation 0/5 settles it, and the extra team-strength features only dilute an
+  EPA refinement further. See `validate_epa_splits.py` (reads a single-pass pbp
+  cache built by `build_epa_cache.py`); the gated `epa2_table` hook in
+  `features.py` stays inert in the live path.
 
 ---
 
