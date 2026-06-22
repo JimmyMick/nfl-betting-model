@@ -27,7 +27,7 @@ held-out season.
 uv run predict.py --season 2026 --week 1 --out predictions/2026-wk01.md
 ```
 
-Trains the isotonic-calibrated full-feature model on every season before the
+Trains the sigmoid-calibrated full-feature model on every season before the
 target, then predicts the slate from strictly pre-game features and writes a
 model-vs-market markdown table (no picks, no EV claims). Pass `--auto` instead of
 `--season/--week` to target the upcoming slate detected from the live schedule
@@ -160,8 +160,9 @@ model (which combines all signals):
 
 > **A big edge is not a betting signal.** It means the model disagrees with an
 > efficient market — which is usually the model being wrong, not the market.
-> Five feature experiments confirmed the moneyline is not beatable here; this is
-> a calibrated *forecaster*, not a tip sheet.
+> A full multi-season ROI backtest plus five washed-out feature experiments
+> confirmed the moneyline is not beatable here; this is a calibrated
+> *forecaster*, not a tip sheet.
 
 #### Reading the Season tracker
 
@@ -315,8 +316,22 @@ uv run query_demo.py          # sample relationship queries
 
 ## Next steps
 
+**Settled** (documented in `RATING.md` — kept here so they aren't re-tried):
+
+- **ROI / betting-edge vs closing lines** — *done.* A multi-season walk-forward
+  (`betting.py`, §7d: 2019–2025, ~1,600+ bets) loses money at every EV
+  threshold; the moneyline market is efficient for this feature set. This is why
+  the project is a calibrated preview/probability tool, not a tip sheet.
+- **Opponent-adjusted early-down EPA** — *tested, washed out* (`epa_oa.py` /
+  `validate_epa_splits.py`, §2h): a sharper thermometer for team strength the
+  market already prices; adding it beside raw EPA hurt 0/5 held-out seasons.
+
+**Open ideas:**
+
 - QB-adjusted Elo (rating travels with the starting quarterback)
-- Richer EPA splits (pass vs rush, success rate, early-down EPA, opponent-adjusted)
-- ROI / betting-edge evaluation vs closing lines (the metric that actually pays)
+- Remaining EPA splits — pass vs rush, success rate (low prior after the
+  opponent-adjusted early-down null; these are further refinements of the same
+  team-strength signal)
 - Link the graph into the model (coach tenure, roster continuity as features)
-- Hyperparameter tuning + walk-forward (multi-season) backtesting
+- Hyperparameter tuning (the multi-season walk-forward backtest already exists,
+  `main.py --backtest`)
