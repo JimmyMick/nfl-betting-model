@@ -109,6 +109,15 @@ def _top_picks(g: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _topn_correct(g: pd.DataFrame, n: int) -> pd.Series:
+    """model_correct for the n most-confident games in each week."""
+    conf = g["model_home_prob"].apply(lambda p: max(p, 1 - p))
+    g = g.assign(_conf=conf)
+    parts = [grp.sort_values("_conf", ascending=False).head(n)
+             for _, grp in g.groupby("week")]
+    return pd.concat(parts)["model_correct"]
+
+
 def _weekly_summary(g: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for wk, grp in g.groupby("week"):
@@ -207,11 +216,13 @@ def render_tracker(graded: pd.DataFrame) -> None:
 
     st.subheader("Top pick of the week (most confident)")
     top = _top_picks(graded)
-    top_correct = (top["Result"] == "✓")
-    st.metric("Top-pick record", _record(top_correct))
+    t1, t3 = st.columns(2)
+    t1.metric("Top pick record", _record(top["Result"] == "✓"))
+    t3.metric("Top-3 picks record", _record(_topn_correct(graded, 3)))
     st.dataframe(top, width="stretch", hide_index=True)
     st.caption("Each week's single highest-confidence model pick vs. the actual "
-               "result — the model's “lock of the week.”")
+               "result — the model's “lock of the week.” The Top-3 record pools "
+               "the three most-confident games each week.")
 
     st.subheader("Week-by-week")
     st.dataframe(_weekly_summary(graded), width="stretch", hide_index=True)

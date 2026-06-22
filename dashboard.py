@@ -285,11 +285,17 @@ def render_tracker(season: int, through_week: int, train_start: int, kind: str) 
             "Result": "✓" if r["model_correct"] else "✗",
         })
     top = pd.DataFrame(top_rows)
+    top3 = pd.concat(
+        grp.sort_values("_conf", ascending=False).head(3)
+        for _, grp in sc.groupby("week"))
     st.subheader("Top pick of the week (most confident)")
-    st.metric("Top-pick record", _record(top["Result"] == "✓"))
+    t1, t3 = st.columns(2)
+    t1.metric("Top pick record", _record(top["Result"] == "✓"))
+    t3.metric("Top-3 picks record", _record(top3["model_correct"]))
     st.dataframe(top, width="stretch", hide_index=True)
     st.caption("Each week's single highest-confidence model pick vs. the actual "
-               "result — the model's “lock of the week.”")
+               "result — the model's “lock of the week.” The Top-3 record pools "
+               "the three most-confident games each week.")
 
     st.subheader("Week-by-week")
     st.dataframe(weekly_summary(s), width="stretch", hide_index=True)
