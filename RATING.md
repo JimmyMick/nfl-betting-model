@@ -263,6 +263,32 @@ illusory). Notably, the season with the **best calibration** had among the
 equally calibrated and vig is in the price. **Conclusion: the moneyline market is
 efficient for this feature set.** Hence the pivot to a probability/preview tool.
 
+### 7e. Most-confident games — top-N filter (`study_topn.py`)
+Question: how accurate is the model if we only keep its *most-confident* games
+each week? For each week, take the **N highest-confidence** picks
+(`confidence = max(p, 1−p)`), pool across the season, and compare the model's
+record to the market's on the **same** games. Trained per season, full-season
+grades, 2019–2024:
+
+| Filter | Model (pooled) | Market (same games) | n |
+|---|---|---|---|
+| Top **1**/week | 108-22 (**83.1%**) | 105-25 (80.8%) | 130 |
+| Top **3**/week | 299-73 (**80.4%**) | 296-76 (79.6%) | 372 |
+| Top **5**/week | 458-143 (76.2%) | 456-145 (75.9%) | 601 |
+
+Per-season top-3 swings **71%–87%** (mean ~80%); the strong 2024 (87%) is the
+high end, not the norm.
+
+**Finding:** "most confident" is a good **filter for near-locks** (~80% hit rate
+for top-3, ~83% for the single top pick) but **not an edge**. The model and the
+market post near-identical records on these games — the top-1 gap is 3 extra
+correct calls in 130 games over six seasons, i.e. noise. "Most confident" simply
+selects heavy favorites, which both the model and Vegas price correctly. This is
+the same efficiency conclusion as [§7d](#7d-betting-roi-vs-the-closing-line),
+viewed through a confidence filter rather than ROI. Surfaced live as the **top
+pick / top-3 record** on the season tracker ([§8b](#8b-grading--season-tracker-gradepy)),
+not as a betting recommendation.
+
 ---
 
 ## 8. Reporting & inference surfaces
