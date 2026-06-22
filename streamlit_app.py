@@ -19,7 +19,7 @@ import pandas as pd
 import streamlit as st
 from sklearn.metrics import brier_score_loss, log_loss
 
-from nfl_betting_model import cloud, picks as picks_mod
+from nfl_betting_model import cloud, picks as picks_mod, submit as submit_mod
 
 st.set_page_config(page_title="NFL model — leaderboard", page_icon="🏈",
                    layout="wide")
@@ -258,6 +258,109 @@ def render_preview(preview: pd.DataFrame) -> None:
                "closing line, not a betting signal (moneyline is efficient).")
 
 
+def _player_name() -> str | None:
+    """Map the signed-in user's email to a pick'em player name via [players]."""
+    email = getattr(st.user, "email", None)
+    if not email:
+        return None
+    try:
+        mapping = dict(st.secrets.get("players", {}))
+    except Exception:
+        mapping = {}
+    return mapping.get(email)
+
+
+def _github_store() -> "submit_mod.GitHubStore | None":
+    try:
+        gh = st.secrets.get("github", {})
+        token, repo = gh.get("token"), gh.get("repo")
+    except Exception:
+        return None
+    if not token or not repo:
+        return None
+    return submit_mod.GitHubStore(token=token, repo=repo,
+                                  branch=gh.get("branch", "main"))
+
+
+def render_make_picks(preview: pd.DataFrame, meta: dict) -> None:
+    season = meta.get("preview_season")
+    week = meta.get("preview_week")
+    if preview is None or season is None or week is None:
+        st.info("No open slate to pick yet — the weekly preview hasn't been "
+                "published. Picks open once that week's preview is exported.")
+        return
+
+    if not _auth_configured() or not getattr(st.user, "is_logged_in", False):
+        st.info("Sign-in must be enabled to submit picks (we attribute each pick "
+                "to the signed-in player). The leaderboard still works read-only.")
+        return
+
+    store = _github_store()
+    if store is None:
+        st.info("Pick submission isn't enabled yet. Add a `[github]` token to the "
+                "app's secrets to turn it on; until then, picks are entered via "
+                "the CSV sheets in the repo.")
+        return
+
+    player = _player_name()
+    if player is None:
+        st.warning(f"{getattr(st.user, 'email', 'This account')} isn't mapped to a "
+                   "player. Add it under `[players]` in the app secrets.")
+        return
+
+    st.subheader(f"Your picks — {season} Week {int(week)}")
+    st.caption(f"Signed in as **{player}**. Pick a winner per game and set your "
+               "confidence (50 = coin-flip, 100 = lock). Submitting overwrites "
+               "your previous picks for this week.")
+
+    games = preview[["away_team", "home_team"]].reset_index(drop=True)
+
+    # Prefill from this player's already-committed picks, if any.
+    prior: dict[str, dict] = {}
+    try:
+        path = f"predictions/picks/{season}-wk{int(week):02d}.csv"
+        current, _ = store.get_file(path)
+        if current:
+            import io
+            cur = pd.read_csv(io.StringIO(current), dtype={"game_id": str})
+            cur = cur[cur["player"].astype(str).str.strip() == player]
+            for _, r in cur.iterrows():
+                prior[str(r["game_id"])] = {
+                    "pick": str(r["pick"]) if pd.notna(r["pick"]) else "",
+                    "confidence": r["confidence"]}
+    except Exception as e:  # noqa: BLE001 — prefill is best-effort
+        st.caption(f"(Couldn't load existing picks: {e})")
+
+    with st.form("make_picks"):
+        selections: dict[str, dict] = {}
+        for _, g in games.iterrows():
+            away, home = g["away_team"], g["home_team"]
+            gid = submit_mod.game_id(season, int(week), away, home)
+            pre = prior.get(gid, {})
+            opts = [away, home]
+            idx = opts.index(pre["pick"]) if pre.get("pick") in opts else 0
+            c1, c2 = st.columns([2, 1])
+            pick = c1.radio(f"{away} @ {home}", opts, index=idx,
+                            horizontal=True, key=f"pick_{gid}")
+            try:
+                conf_default = int(float(pre.get("confidence")))
+            except (TypeError, ValueError):
+                conf_default = 50
+            conf = c2.slider("confidence", 50, 100, conf_default,
+                             key=f"conf_{gid}", label_visibility="collapsed")
+            selections[gid] = {"pick": pick, "confidence": conf}
+        submitted = st.form_submit_button("Submit my picks", type="primary")
+
+    if submitted:
+        try:
+            submit_mod.submit_picks(store, int(season), int(week), games,
+                                    player, selections)
+            st.success(f"Saved {len(selections)} picks for {player}, "
+                       f"Week {int(week)}. They'll score in Tuesday's grade run.")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Couldn't save picks: {e}")
+
+
 # ── Page ──────────────────────────────────────────────────────────────────────
 _require_login()
 
@@ -288,6 +391,8 @@ if stamps:
 tabs, names = [], []
 if scored is not None or graded is not None:
     names.append("Pick'em leaderboard")
+if preview is not None:
+    names.append("Make picks")
 if graded is not None:
     names.append("Season tracker")
 if preview is not None:
@@ -301,6 +406,10 @@ if "Pick'em leaderboard" in tab_by_name:
             st.info("Leaderboard needs a graded week to score against.")
         else:
             render_leaderboard(scored, graded)
+
+if "Make picks" in tab_by_name:
+    with tab_by_name["Make picks"]:
+        render_make_picks(preview, meta)
 
 if "Season tracker" in tab_by_name:
     with tab_by_name["Season tracker"]:
