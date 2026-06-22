@@ -8,6 +8,7 @@ dependencies = [
     "altair>=5.4.0",
     "authlib>=1.6.12",
     "fpdf2>=2.7.0",
+    "httpx>=0.28.1",
     "neo4j>=6.2.0",
     "nflreadpy>=0.1.5",
     "pandas>=3.0.3",
