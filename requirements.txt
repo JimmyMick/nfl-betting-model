@@ -10,5 +10,4 @@ scikit-learn==1.9.0
 altair==6.2.1
 # Required by Streamlit's native OIDC login (st.login/st.user) for the optional
 # Descope sign-in gate. Inert unless [auth] secrets are configured.
-# Pinned exact to force Community Cloud to rebuild the dependency layer.
-Authlib==1.6.12
+Authlib>=1.6.12
