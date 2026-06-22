@@ -91,6 +91,24 @@ def _calibration(g: pd.DataFrame) -> tuple[float, float, float, float]:
     return m_ll, m_br, k_ll, k_br
 
 
+def _top_picks(g: pd.DataFrame) -> pd.DataFrame:
+    """The model's most-confident pick in each week, with the actual result."""
+    conf = g["model_home_prob"].apply(lambda p: max(p, 1 - p))
+    g = g.assign(_conf=conf)
+    rows = []
+    for wk, grp in g.groupby("week"):
+        r = grp.loc[grp["_conf"].idxmax()]
+        rows.append({
+            "Week": str(int(wk)),
+            "Matchup": f"{r['away_team']} @ {r['home_team']}",
+            "Top pick": r["model_pick"],
+            "Confidence": f"{r['_conf']:.0%}",
+            "Actual": r["winner"],
+            "Result": "✓" if r["model_correct"] else "✗",
+        })
+    return pd.DataFrame(rows)
+
+
 def _weekly_summary(g: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for wk, grp in g.groupby("week"):
@@ -186,6 +204,14 @@ def render_tracker(graded: pd.DataFrame) -> None:
         ).properties(height=320)
     )
     st.altair_chart(line, width="stretch")
+
+    st.subheader("Top pick of the week (most confident)")
+    top = _top_picks(graded)
+    top_correct = (top["Result"] == "✓")
+    st.metric("Top-pick record", _record(top_correct))
+    st.dataframe(top, width="stretch", hide_index=True)
+    st.caption("Each week's single highest-confidence model pick vs. the actual "
+               "result — the model's “lock of the week.”")
 
     st.subheader("Week-by-week")
     st.dataframe(_weekly_summary(graded), width="stretch", hide_index=True)
