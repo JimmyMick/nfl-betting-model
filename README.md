@@ -73,13 +73,19 @@ pick'em, and roster views without touching the CLI.
 **Launch it:**
 
 ```bash
-uv run streamlit run dashboard.py
+./.venv/bin/python -m streamlit run dashboard.py
 ```
 
 This opens the app at <http://localhost:8501> (Streamlit usually opens your
 browser automatically; if not, visit that URL). To run it without auto-opening a
 browser — e.g. on a remote host — add `--server.headless true`. Stop the server
 with `Ctrl-C` in the terminal.
+
+> **Why `./.venv/bin/python -m streamlit` and not `uv run streamlit`?** If `uv`
+> upgrades its managed Python out from under the project, `uv run` can crash with
+> `dyld: Library not loaded: …libpython3.12.dylib`. Calling the venv interpreter
+> directly sidesteps that. The same fallback works for any command below — e.g.
+> `./.venv/bin/python predict.py …` if a `uv run` invocation ever fails that way.
 
 **Sidebar controls** (shared across all tabs):
 
