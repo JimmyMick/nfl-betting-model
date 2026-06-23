@@ -320,24 +320,27 @@ uv run ingest_graph.py --seasons 2022-2023
 uv run query_demo.py          # sample relationship queries
 ```
 
-## Next steps
+## Status: feature-complete
 
-**Settled** (documented in `RATING.md` — kept here so they aren't re-tried):
+The modeling thesis is settled, and the feature search is **closed**. After a
+disciplined sweep of candidates, exactly **two signals cleared the walk-forward
+bar — and both are the same idea**: *who might not suit up this week*
+(availability, now extended to Questionable players at a low weight). Everything
+that merely measures **team strength** more precisely washes out, because the
+closing line already prices it. The model is a calibrated **forecaster**, not a
+market-beater, and that conclusion is robustly evidenced.
 
-- **ROI / betting-edge vs closing lines** — *done.* A multi-season walk-forward
-  (`betting.py`, §7d: 2019–2025, ~1,600+ bets) loses money at every EV
-  threshold; the moneyline market is efficient for this feature set. This is why
-  the project is a calibrated preview/probability tool, not a tip sheet.
-- **Opponent-adjusted early-down EPA** — *tested, washed out* (`epa_oa.py` /
-  `validate_epa_splits.py`, §2h): a sharper thermometer for team strength the
-  market already prices; adding it beside raw EPA hurt 0/5 held-out seasons.
+**Settled — kept here so they aren't re-tried** (all in `RATING.md`):
 
-**Open ideas:**
+- **Availability** (§2f) — *shipped, the one winner.* Talent ruled out by the
+  injury report (Out/Doubtful/**Questionable@0.15**); the only feature orthogonal
+  to team strength.
+- **ROI / betting-edge vs closing lines** (§7d) — *done.* 2019–2025 walk-forward,
+  ~1,600+ bets, loses at every EV threshold → moneyline retired.
+- **Five documented nulls** (§2h) — PFF, coaching, per-player QB-EPA,
+  weather/climate, and opponent-adjusted early-down EPA all priced by the market.
 
-- QB-adjusted Elo (rating travels with the starting quarterback)
-- Remaining EPA splits — pass vs rush, success rate (low prior after the
-  opponent-adjusted early-down null; these are further refinements of the same
-  team-strength signal)
-- Link the graph into the model (coach tenure, roster continuity as features)
-- Hyperparameter tuning (the multi-season walk-forward backtest already exists,
-  `main.py --backtest`)
+**Parked** (would be revisited only with a genuinely orthogonal angle, not
+another talent measure): QB-adjusted Elo, graph-derived features, hyperparameter
+tuning. Active work now lives in the **product** — the weekly preview, pick'em
+tracker, and cloud leaderboard — not the feature set.
