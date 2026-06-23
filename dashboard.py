@@ -24,7 +24,8 @@ from fpdf import FPDF
 
 from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
-from nfl_betting_model import data, picks as picks_mod, submit as submit_mod
+from nfl_betting_model import (
+    data, picks as picks_mod, submit as submit_mod, llm_picker as llm_mod)
 from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
@@ -451,6 +452,71 @@ def _week_games(season: int, week: int) -> pd.DataFrame:
         drop=True)
 
 
+@st.cache_data(show_spinner=False)
+def _full_games(season: int) -> pd.DataFrame:
+    """All games for a season incl. unplayed (records/form + upcoming slate)."""
+    return data.load_games([season], include_unplayed=True)
+
+
+@st.cache_data(show_spinner=False)
+def _injuries(season: int) -> pd.DataFrame:
+    """Season injury report, or empty frame if no feed yet (future season)."""
+    import nflreadpy as nfl
+    try:
+        one = nfl.load_injuries(seasons=[season])
+    except Exception:
+        return pd.DataFrame(columns=["season", "week", "team", "full_name",
+                                     "position", "report_status",
+                                     "report_primary_injury"])
+    return one.to_pandas() if hasattr(one, "to_pandas") else pd.DataFrame(one)
+
+
+def render_ai_picks(season: int, week: int, provider: str, temperature: float,
+                    notes: dict[str, str]) -> None:
+    with st.spinner("The AI expert is studying the slate…"):
+        try:
+            games = _full_games(season)
+            inj = _injuries(season)
+            picks, ai_name = llm_mod.generate_picks(
+                games, inj, season, week, notes=notes,
+                provider=(None if provider == "auto" else provider),
+                temperature=temperature)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Couldn't generate AI picks: {e}")
+            return
+
+    if not picks:
+        st.warning("The AI returned no usable picks. Try again (or lower "
+                   "temperature).")
+        return
+
+    slate = _week_games(season, week)
+    rows = []
+    for _, g in slate.iterrows():
+        gid = llm_mod.submit_mod.game_id(season, week, g["away_team"], g["home_team"])
+        p = picks.get(gid)
+        if not p:
+            continue
+        rows.append({"Matchup": f"{g['away_team']} @ {g['home_team']}",
+                     "AI pick": p["pick"], "Conf": p["confidence"],
+                     "Why": p["rationale"]})
+    st.subheader(f"{ai_name}'s picks — {season} Week {week}")
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    # Persist to the shared pick sheet as the AI player (scored like everyone).
+    path = picks_mod.week_path(season, week)
+    current = path.read_text() if path.exists() else None
+    text = submit_mod.merge_player_picks(current, season, week,
+                                         slate[["away_team", "home_team"]],
+                                         ai_name, picks)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    st.success(f"Saved {len(rows)} picks as **{ai_name}** → "
+               f"{path.relative_to(path.parents[2])}. Commit the CSV to share it; "
+               "the AI is now scored alongside the human experts. (Rationales are "
+               "shown here but not stored in the sheet.)")
+
+
 def render_make_picks(season: int, week: int, player: str) -> None:
     try:
         games = _week_games(season, week)
@@ -520,9 +586,9 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-preview_tab, makepicks_tab, tracker_tab, pickem_tab, roster_tab = st.tabs(
-    ["Weekly preview", "Make picks", "Season tracker", "Pick'em leaderboard",
-     "Team roster"])
+preview_tab, makepicks_tab, ai_tab, tracker_tab, pickem_tab, roster_tab = st.tabs(
+    ["Weekly preview", "Make picks", "AI expert", "Season tracker",
+     "Pick'em leaderboard", "Team roster"])
 
 with preview_tab:
     st.title(f"Preview — {season}")
@@ -555,6 +621,49 @@ with makepicks_tab:
         else:
             st.info("Pick your name and week, then **Load games** to fill in "
                     "winners and confidence.")
+
+with ai_tab:
+    st.title(f"AI expert — {season}")
+    st.caption("An LLM makes **blind** winner + confidence picks from raw data "
+               "(records, recent form, injuries, weather) plus your per-game "
+               "notes — it never sees the model or the betting line. Scored "
+               "alongside the human experts.")
+    ac1, ac2, ac3 = st.columns(3)
+    ai_week = ac1.number_input("Week", min_value=1, max_value=22, value=1, step=1,
+                               key="ai_week")
+    ai_provider = ac2.selectbox("Provider", ["auto", "anthropic", "openai"],
+                                key="ai_provider",
+                                help="auto = LLM_PROVIDER env (default Claude)")
+    ai_temp = ac3.slider("Temperature", 0.0, 1.0, 0.5, 0.1, key="ai_temp",
+                         help="higher = more willing to diverge from the chalk")
+    if st.button("Load slate", type="primary", key="run_ai_load"):
+        st.session_state["ai_slate"] = (int(season), int(ai_week))
+    if "ai_slate" in st.session_state:
+        a_season, a_week = st.session_state["ai_slate"]
+        try:
+            ai_slate = _week_games(a_season, a_week)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Couldn't load the slate: {e}")
+            ai_slate = None
+        if ai_slate is not None and ai_slate.empty:
+            st.warning(f"No games found for {a_season} Week {a_week}.")
+        elif ai_slate is not None:
+            st.caption("Add optional intel per game — rivalry, distractions, "
+                       "legal/locker-room issues, anything the raw data misses.")
+            with st.form("ai_notes"):
+                ai_notes = {}
+                for _, g in ai_slate.iterrows():
+                    away, home = g["away_team"], g["home_team"]
+                    gid = submit_mod.game_id(a_season, a_week, away, home)
+                    ai_notes[gid] = st.text_input(
+                        f"{away} @ {home}", value="", key=f"ai_note_{gid}",
+                        placeholder="optional notes for the AI…")
+                go_ai = st.form_submit_button("Generate AI picks", type="primary")
+            if go_ai:
+                render_ai_picks(a_season, int(a_week), ai_provider, float(ai_temp),
+                                ai_notes)
+    else:
+        st.info("Pick a week and **Load slate** to add notes and generate picks.")
 
 with tracker_tab:
     st.title(f"Season tracker — {season}")
