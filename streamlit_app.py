@@ -13,6 +13,8 @@ set — pandas / numpy / sklearn / altair / streamlit).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -273,6 +275,14 @@ def render_preview(preview: pd.DataFrame) -> None:
                "closing line, not a betting signal (moneyline is efficient).")
 
 
+def render_guide() -> None:
+    """Render the friend-facing user guide (GUIDE.md at the repo root)."""
+    try:
+        st.markdown((Path(__file__).parent / "GUIDE.md").read_text())
+    except Exception:
+        st.info("Guide not available.")
+
+
 def render_open_ai_picks(meta: dict) -> None:
     """The AI expert's picks for the OPEN (ungraded) week, shown pre-game.
 
@@ -445,6 +455,7 @@ if graded is not None:
     names.append("Season tracker")
 if preview is not None:
     names.append("Weekly preview")
+names.append("📖 Guide")
 made = st.tabs(names)
 tab_by_name = dict(zip(names, made))
 
@@ -467,3 +478,7 @@ if "Weekly preview" in tab_by_name:
     with tab_by_name["Weekly preview"]:
         render_preview(preview)
         render_open_ai_picks(meta)
+
+if "📖 Guide" in tab_by_name:
+    with tab_by_name["📖 Guide"]:
+        render_guide()
