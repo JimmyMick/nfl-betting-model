@@ -273,6 +273,39 @@ def render_preview(preview: pd.DataFrame) -> None:
                "closing line, not a betting signal (moneyline is efficient).")
 
 
+def render_open_ai_picks(meta: dict) -> None:
+    """The AI expert's picks for the OPEN (ungraded) week, shown pre-game.
+
+    Reads the committed pick sheet for the preview week and shows only rows that
+    carry a rationale — i.e. the AI expert. Human picks (no rationale) stay
+    hidden until the week is graded, so the pool isn't spoiled.
+    """
+    season, week = meta.get("preview_season"), meta.get("preview_week")
+    if season is None or week is None:
+        return
+    try:
+        path = picks_mod.week_path(int(season), int(week))
+        if not path.exists():
+            return
+        df = pd.read_csv(path, dtype={"game_id": str})
+    except Exception:
+        return
+    if "rationale" not in df.columns:
+        return
+    ai = df[df["rationale"].notna()
+            & df["rationale"].astype(str).str.strip().ne("")]
+    if ai.empty:
+        return
+    st.subheader(f"🤖 AI expert — Week {int(week)} picks (pre-game)")
+    rows = ai.assign(Matchup=ai["away_team"] + " @ " + ai["home_team"]).rename(
+        columns={"player": "Expert", "pick": "Pick", "confidence": "Conf",
+                 "rationale": "Why"})
+    st.dataframe(rows[["Expert", "Matchup", "Pick", "Conf", "Why"]],
+                 width="stretch", hide_index=True)
+    st.caption("The AI's reasoning, shared **before kickoff**. The human experts' "
+               "picks stay hidden until the week is graded.")
+
+
 def _player_name() -> str | None:
     """Map the signed-in user's email to a pick'em expert name via [players]."""
     email = getattr(st.user, "email", None)
@@ -433,3 +466,4 @@ if "Season tracker" in tab_by_name:
 if "Weekly preview" in tab_by_name:
     with tab_by_name["Weekly preview"]:
         render_preview(preview)
+        render_open_ai_picks(meta)
