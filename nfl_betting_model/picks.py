@@ -26,10 +26,12 @@ PICKS_DIR = Path(__file__).resolve().parent.parent / "predictions" / "picks"
 PLAYERS_FILE = PICKS_DIR / "players.txt"
 
 # Columns in a weekly pick sheet. game_id is the join key; pick/confidence are
-# the only two a human fills in.
+# the only two a human fills in. ``rationale`` is optional free text (the LLM
+# "AI expert" writes a one-liner per pick; humans leave it blank) — metadata
+# only, never used in scoring.
 PICK_COLUMNS = [
     "season", "week", "game_id", "gameday",
-    "away_team", "home_team", "player", "pick", "confidence",
+    "away_team", "home_team", "player", "pick", "confidence", "rationale",
 ]
 
 
@@ -80,6 +82,7 @@ def seed_week(games_week: pd.DataFrame, players: list[str], out_path: Path,
                 "player": player,
                 "pick": "",
                 "confidence": "",
+                "rationale": "",
             })
     out = pd.DataFrame(rows, columns=PICK_COLUMNS)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,6 +93,8 @@ def seed_week(games_week: pd.DataFrame, players: list[str], out_path: Path,
 def load_week_picks(path: Path) -> pd.DataFrame:
     """Read one filled sheet, keeping only rows with a non-blank pick."""
     df = pd.read_csv(path, dtype={"game_id": str})
+    if "rationale" not in df.columns:  # tolerate pre-rationale sheets
+        df["rationale"] = ""
     df["pick"] = df["pick"].astype("string").str.strip()
     df = df[df["pick"].notna() & (df["pick"] != "")].copy()
     df["player"] = df["player"].astype("string").str.strip()

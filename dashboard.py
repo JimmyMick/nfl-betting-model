@@ -439,6 +439,20 @@ def render_pickem(season: int, through_week: int, train_start: int, kind: str) -
                                values="Result", aggfunc="first").reset_index()
         st.dataframe(pivot, width="stretch", hide_index=True)
 
+        if "rationale" in this_week.columns:
+            rat = this_week[this_week["rationale"].notna()
+                            & this_week["rationale"].astype(str).str.strip().ne("")]
+            if not rat.empty:
+                with st.expander("🤖 AI expert — why it picked what it did"):
+                    rr = rat.assign(
+                        Matchup=rat["away_team"] + " @ " + rat["home_team"],
+                        Pick=rat.apply(
+                            lambda r: f"{r['pick']} {'✓' if r['correct'] else '✗'}",
+                            axis=1)).rename(columns={"player": "Player",
+                                                     "rationale": "Rationale"})
+                    st.dataframe(rr[["Player", "Matchup", "Pick", "Rationale"]],
+                                 width="stretch", hide_index=True)
+
     st.caption("Picks come from predictions/picks/*.csv (one row per game/player). "
                "Brier / log loss use only picks that carried a confidence.")
 

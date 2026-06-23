@@ -177,6 +177,21 @@ def render_leaderboard(scored: pd.DataFrame | None, graded: pd.DataFrame) -> Non
         pivot = wk.pivot_table(index=["Matchup"], columns="player",
                                values="Result", aggfunc="first").reset_index()
         st.dataframe(pivot, width="stretch", hide_index=True)
+
+        # AI expert reasoning (any pick that carried a written rationale).
+        if "rationale" in this_week.columns:
+            rat = this_week[this_week["rationale"].notna()
+                            & this_week["rationale"].astype(str).str.strip().ne("")]
+            if not rat.empty:
+                with st.expander("🤖 AI expert — why it picked what it did"):
+                    rr = rat.assign(
+                        Matchup=rat["away_team"] + " @ " + rat["home_team"],
+                        Pick=rat.apply(
+                            lambda r: f"{r['pick']} {'✓' if r['correct'] else '✗'}",
+                            axis=1)).rename(columns={"player": "Player",
+                                                     "rationale": "Rationale"})
+                    st.dataframe(rr[["Player", "Matchup", "Pick", "Rationale"]],
+                                 width="stretch", hide_index=True)
     st.caption("Brier / log loss use only picks that carried a confidence.")
 
 

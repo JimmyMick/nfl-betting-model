@@ -47,6 +47,8 @@ def merge_player_picks(current_csv: str | None, season: int, week: int,
         existing = pd.read_csv(io.StringIO(current_csv), dtype={"game_id": str})
     else:
         existing = pd.DataFrame(columns=PICK_COLUMNS)
+    if "rationale" not in existing.columns:  # tolerate pre-rationale sheets
+        existing["rationale"] = ""
 
     # Keep all rows except this player's rows for this week (we rewrite those).
     keep = existing[existing["player"].astype(str).str.strip() != player].copy()
@@ -62,10 +64,11 @@ def merge_player_picks(current_csv: str | None, season: int, week: int,
             "player": player,
             "pick": sel.get("pick", ""),
             "confidence": sel.get("confidence", ""),
+            "rationale": sel.get("rationale", ""),
         })
     mine = pd.DataFrame(rows, columns=PICK_COLUMNS)
 
-    out = pd.concat([keep, mine], ignore_index=True)
+    out = pd.concat([keep, mine], ignore_index=True)[PICK_COLUMNS]
     out = out.sort_values(["game_id", "player"]).reset_index(drop=True)
     return out.to_csv(index=False)
 

@@ -35,7 +35,7 @@ GRADED_COLS = [
 ]
 SCORED_COLS = [
     "player", "game_id", "week", "home_team", "away_team", "pick", "correct",
-    "player_home_prob", "home_win", "winner", "model_correct",
+    "player_home_prob", "home_win", "winner", "model_correct", "rationale",
 ]
 PREVIEW_COLS = [
     "home_team", "away_team", "model_home_prob", "market_home_prob", "edge",
