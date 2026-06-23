@@ -119,10 +119,24 @@ The one signal orthogonal to team strength: Elo/EPA rate a team's baseline
 roster but are blind to a key starter — above all the QB — being ruled out *this
 week*. From the official injury report (`load_injuries`, `report_status`), for
 each team-week we sum the **talent above replacement** of players listed
-Out/Doubtful: `weight · max(0, MaddenOVR − 65)` (Out=1.0, Doubtful=0.75). Because
-QBs carry the highest OVRs, a QB ruled out dominates the sum naturally. Exposes
-`out_avail` per team. Leak-free: the report's game-status designation is
-published days before kickoff, exactly the pre-game info a bettor holds.
+Out/Doubtful/Questionable: `weight · max(0, MaddenOVR − 65)`
+(Out=1.0, Doubtful=0.75, **Questionable=0.15**). Because QBs carry the highest
+OVRs, a QB ruled out dominates the sum naturally. Exposes `out_avail` per team.
+Leak-free: the report's game-status designation is published days before kickoff,
+exactly the pre-game info a bettor holds.
+
+> **Why Questionable at 0.15.** Originally Out/Doubtful only. A walk-forward
+> sweep (`validate_avail_upgrade.py`, 2021–2025 sigmoid) showed including
+> Questionable at a *low* weight is a genuine, if modest, upgrade — the second
+> signal ever to clear the bar after availability itself. Isolation (Elo+EPA):
+> logloss **5/5** seasons, Brier 4/5 at w=0.15. Full (+QB+Starters, the live
+> config): logloss 3/5, Brier 4/5, **AUC 5/5** — the QB/starter features absorb
+> some of the calibration gain but it still nets positive, and ranking improves
+> every season. Crucially the improvement **degrades monotonically** as the
+> weight rises (0.10/0.15 best → 0.55 worst): most Questionable players suit up,
+> so a light weight captures the ~25–30% who miss without the false-positive
+> flood of a heavy one. Reproducible via `validate_avail_upgrade.py` (reads the
+> `build_epa_cache.py` / `build_full_cache.py` parquet caches).
 
 ### 2g. Market benchmark (`features.market_home_prob`)
 The Vegas moneyline is the yardstick, not an input feature. American odds →

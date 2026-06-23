@@ -7,7 +7,7 @@ but are blind to a key starter — above all the quarterback — being ruled out
 THIS week. Because QBs carry the highest OVRs, a QB ruled out dominates the sum
 naturally, with no position special-casing.
 
-    out_avail = sum over Out/Doubtful players of  weight * max(0, OVR - 65)
+    out_avail = sum over Out/Doubtful/Questionable players of  weight * max(0, OVR - 65)
 
 Leakage: the injury report's game-status designation is published days before
 kickoff (Wed-Fri practice reports + the Friday final status), so it is exactly
@@ -24,9 +24,12 @@ from . import madden as madden_mod
 
 # Madden OVR at/below which an out player costs ~no talent (replacement-level).
 REPLACEMENT_OVR = 65
-# Likelihood each game-status designation actually misses the game.
-# Questionable is excluded (most such players suit up).
-_STATUS_WEIGHT = {"Out": 1.0, "Doubtful": 0.75}
+# Likelihood each game-status designation actually misses the game. Questionable
+# is included at a deliberately low weight: most such players suit up, but the
+# ~25-30% who don't carry real signal — a walk-forward sweep (validate_avail_
+# upgrade.py) found 0.15 the sweet spot (logloss 5/5 isolation, AUC 5/5 full),
+# with the gain degrading monotonically as the weight rises.
+_STATUS_WEIGHT = {"Out": 1.0, "Doubtful": 0.75, "Questionable": 0.15}
 
 
 def _schedule_team_games(seasons: list[int]) -> pd.DataFrame:
