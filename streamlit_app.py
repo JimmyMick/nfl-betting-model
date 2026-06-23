@@ -134,8 +134,8 @@ def _weekly_summary(g: pd.DataFrame) -> pd.DataFrame:
 # ── Tab renderers ─────────────────────────────────────────────────────────────
 def render_leaderboard(scored: pd.DataFrame | None, graded: pd.DataFrame) -> None:
     if scored is None or scored.empty:
-        st.info("No picks recorded yet. Once players submit picks and a week is "
-                "graded, the leaderboard populates here — each player scored "
+        st.info("No picks recorded yet. Once the Urban Platform Experts submit picks and a week is "
+                "graded, the leaderboard populates here — each expert scored "
                 "against the model on the games they picked.")
         return
 
@@ -148,7 +148,7 @@ def render_leaderboard(scored: pd.DataFrame | None, graded: pd.DataFrame) -> Non
         col.metric(r["Player"], r["Record"], f"vs model {r['vs Model']}",
                    delta_color="off")
     st.caption(f"🏆 Leading: **{leader['Player']}** ({leader['Record']}). "
-               "“vs Model” = a player’s accuracy minus the model’s over the same "
+               "“vs Model” = an expert’s accuracy minus the model’s over the same "
                "games they picked.")
     st.dataframe(board, width="stretch", hide_index=True)
 
@@ -259,7 +259,7 @@ def render_preview(preview: pd.DataFrame) -> None:
 
 
 def _player_name() -> str | None:
-    """Map the signed-in user's email to a pick'em player name via [players]."""
+    """Map the signed-in user's email to a pick'em expert name via [players]."""
     email = getattr(st.user, "email", None)
     if not email:
         return None
@@ -292,7 +292,7 @@ def render_make_picks(preview: pd.DataFrame, meta: dict) -> None:
 
     if not _auth_configured() or not getattr(st.user, "is_logged_in", False):
         st.info("Sign-in must be enabled to submit picks (we attribute each pick "
-                "to the signed-in player). The leaderboard still works read-only.")
+                "to the signed-in expert). The leaderboard still works read-only.")
         return
 
     store = _github_store()
@@ -304,8 +304,8 @@ def render_make_picks(preview: pd.DataFrame, meta: dict) -> None:
 
     player = _player_name()
     if player is None:
-        st.warning(f"{getattr(st.user, 'email', 'This account')} isn't mapped to a "
-                   "player. Add it under `[players]` in the app secrets.")
+        st.warning(f"{getattr(st.user, 'email', 'This account')} isn't mapped to an "
+                   "expert. Add it under `[players]` in the app secrets.")
         return
 
     st.subheader(f"Your picks — {season} Week {int(week)}")
@@ -315,7 +315,7 @@ def render_make_picks(preview: pd.DataFrame, meta: dict) -> None:
 
     games = preview[["away_team", "home_team"]].reset_index(drop=True)
 
-    # Prefill from this player's already-committed picks, if any.
+    # Prefill from this expert's already-committed picks, if any.
     prior: dict[str, dict] = {}
     try:
         path = f"predictions/picks/{season}-wk{int(week):02d}.csv"
