@@ -135,6 +135,8 @@ def _weekly_summary(g: pd.DataFrame) -> pd.DataFrame:
 
 # ── Tab renderers ─────────────────────────────────────────────────────────────
 def render_leaderboard(scored: pd.DataFrame | None, graded: pd.DataFrame) -> None:
+    st.caption("👋 New here? The **📖 Guide** tab covers how to enter your picks "
+               "and read everything below.")
     if scored is None or scored.empty:
         st.info("No picks recorded yet. Once the Urban Platform Experts submit picks and a week is "
                 "graded, the leaderboard populates here — each expert scored "
