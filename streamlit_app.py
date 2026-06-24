@@ -13,6 +13,7 @@ set — pandas / numpy / sklearn / altair / streamlit).
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import altair as alt
@@ -348,6 +349,21 @@ def render_make_picks(preview: pd.DataFrame, meta: dict) -> None:
     if preview is None or season is None or week is None:
         st.info("No open slate to pick yet — the weekly preview hasn't been "
                 "published. Picks open once that week's preview is exported.")
+        return
+
+    # Off-season: the published slate is last season's finale (a seeded sample),
+    # so don't show a stale, unsubmittable week. Compare the previewed season to
+    # the current NFL season (Sep-Dec = this year, Jan-Feb = last year, else the
+    # upcoming year). The preview flips to the new season automatically once the
+    # Week 1 slate is exported (~5 days before kickoff).
+    _now = dt.datetime.now()
+    _cur_season = (_now.year if _now.month >= 9
+                   else _now.year - 1 if _now.month <= 2 else _now.year)
+    if int(season) < _cur_season:
+        st.info(f"🏈 **Picks open when the {_cur_season} season kicks off** — the "
+                f"Week 1 slate posts around **early September {_cur_season}**, and "
+                "this tab will switch to it automatically. What you see elsewhere "
+                "is last season's finale, kept as a sample until then.")
         return
 
     if not _auth_configured() or not getattr(st.user, "is_logged_in", False):
