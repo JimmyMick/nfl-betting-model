@@ -55,7 +55,14 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        v = v.strip()
+        if v[:1] in ('"', "'"):  # quoted value: take the quoted content verbatim
+            q = v[0]
+            end = v.find(q, 1)
+            v = v[1:end] if end != -1 else v.strip(q)
+        elif " #" in v:  # unquoted: drop a trailing inline comment
+            v = v.split(" #", 1)[0].rstrip()
+        os.environ.setdefault(k.strip(), v)
 
 
 # ── Context assembly (the "raw data" the expert reasons over) ─────────────────

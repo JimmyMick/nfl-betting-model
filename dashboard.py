@@ -25,7 +25,8 @@ from fpdf import FPDF
 from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
 from nfl_betting_model import (
-    data, picks as picks_mod, submit as submit_mod, llm_picker as llm_mod)
+    data, picks as picks_mod, submit as submit_mod, llm_picker as llm_mod,
+    chat as chat_mod)
 from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
@@ -586,6 +587,83 @@ def render_make_picks(season: int, week: int, player: str) -> None:
                    "it; the Tuesday grade run scores it.")
 
 
+@st.cache_data(show_spinner=False)
+def _chat_grounding() -> dict:
+    """Meta for the exported artifacts the chat bot answers from (cheap read)."""
+    from nfl_betting_model import cloud
+    return cloud.load_artifacts().get("meta", {})
+
+
+def render_ask(provider: str, temperature: float) -> None:
+    """Local-only chat: natural-language Q&A grounded in the model's exports.
+
+    Reuses ``chat.answer_question`` — it answers strictly from the committed
+    ``predictions/cloud/`` artifacts (this week's model-vs-market preview, the
+    season grade, the pick'em leaderboard). Needs a local API key; this is why
+    the feature lives here and never in the published cloud app.
+    """
+    # Prefer the LIVE preview the user ran in the Weekly-preview tab (cached, so
+    # this is a hit, not a retrain) over the last committed cloud snapshot — so
+    # the chat answers about the slate they're actually looking at.
+    preview_frame = None
+    preview_meta = None
+    live_label = None
+    if "preview" in st.session_state:
+        p_season, p_week, p_train, p_kind = st.session_state["preview"]
+        try:
+            preview_frame = _predict(int(p_season), int(p_week), int(p_train), p_kind)
+            preview_meta = {"preview_season": int(p_season),
+                            "preview_week": int(p_week)}
+            live_label = f"{p_season} Wk {p_week}"
+        except Exception:  # noqa: BLE001 — fall back to the committed snapshot
+            preview_frame = None
+
+    disk_meta = _chat_grounding()
+    if preview_frame is None and not disk_meta:
+        st.warning(
+            "Nothing to ground on yet. Run a **Weekly preview** first (that "
+            "trains the model on the current slate), then come back here and ask "
+            "about it.")
+        return
+
+    if live_label:
+        st.caption(f"Grounded in the **live preview you ran — {live_label}** "
+                   "(plus the committed season-grade / pick'em exports). Answers "
+                   "come only from that data — no invented scores.")
+    else:
+        pv = f"{disk_meta.get('preview_season', '?')} Wk {disk_meta.get('preview_week', '?')}"
+        st.caption(f"⚠️ Grounded in the **last committed export — preview {pv}**, "
+                   "not the current slate. Run a **Weekly preview** for the week "
+                   "you want, then ask here and the chat will use it.")
+
+    history = st.session_state.setdefault("ask_history", [])
+    if history and st.button("Clear chat", key="clear_ask"):
+        history.clear()
+        st.rerun()
+
+    for role, text in history:
+        with st.chat_message(role):
+            st.markdown(text)
+
+    prompt = st.chat_input("Ask about the slate, the model's record, the edges…")
+    if prompt:
+        history.append(("user", prompt))
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking…"):
+                try:
+                    ans = chat_mod.answer_question(
+                        prompt,
+                        provider=(None if provider == "auto" else provider),
+                        temperature=temperature,
+                        preview=preview_frame, preview_meta=preview_meta)
+                except Exception as e:  # noqa: BLE001
+                    ans = f"⚠️ Couldn't answer: {e}"
+            st.markdown(ans)
+        history.append(("assistant", ans))
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -600,9 +678,10 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-preview_tab, makepicks_tab, ai_tab, tracker_tab, pickem_tab, roster_tab = st.tabs(
-    ["Weekly preview", "Make picks", "AI expert", "Season tracker",
-     "Pick'em leaderboard", "Team roster"])
+(preview_tab, ask_tab, makepicks_tab, ai_tab, tracker_tab, pickem_tab,
+ roster_tab) = st.tabs(
+    ["Weekly preview", "Ask the model", "Make picks", "AI expert",
+     "Season tracker", "Pick'em leaderboard", "Team roster"])
 
 with preview_tab:
     st.title(f"Preview — {season}")
@@ -616,6 +695,13 @@ with preview_tab:
     else:
         st.info("Pick a week and **Run preview**. First run for a slate trains "
                 "the model (~30–60s); results are cached.")
+
+with ask_tab:
+    st.title("Ask the model")
+    ask_provider = st.selectbox(
+        "Provider", ["auto", "anthropic", "openai"], key="ask_provider",
+        help="auto = LLM_PROVIDER env (default Claude). Needs a local API key.")
+    render_ask(ask_provider, temperature=0.3)
 
 with makepicks_tab:
     st.title(f"Make picks — {season}")
