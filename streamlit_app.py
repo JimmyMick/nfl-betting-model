@@ -511,7 +511,6 @@ art = cloud.load_artifacts()
 graded, scored, preview, meta = (
     art["graded"], art["scored"], art["preview"], art["meta"])
 paper_ledger = paper_mod.load_ledger()
-has_paper = paper_ledger is not None and not paper_ledger.empty
 
 if graded is None and preview is None:
     st.warning("No data published yet. The local weekly runs export results here "
@@ -540,8 +539,7 @@ if graded is not None:
     names.append("Season tracker")
 if preview is not None:
     names.append("Weekly preview")
-if has_paper:
-    names.append("📈 Paper play")
+names.append("📈 Paper play")  # always shown; empty-state until the first play
 names.append("📖 Guide")
 made = st.tabs(names)
 tab_by_name = dict(zip(names, made))
