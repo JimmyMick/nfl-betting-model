@@ -254,6 +254,9 @@ def main() -> None:
                     help="logistic = saner tail probabilities (preview default); "
                          "gbm = marginally better aggregate calibration, uglier tails")
     ap.add_argument("--out", default=None, help="also write the markdown to this path")
+    ap.add_argument("--paper", action="store_true",
+                    help="log this week's biggest disagreement to the paper-play "
+                         "ledger (implied by --auto for the live crons)")
     ap.add_argument("--export-dir", nargs="?", const="", default=None,
                     help="also export the slate as CSV here for the cloud "
                          "dashboard (bare flag uses predictions/cloud)")
@@ -270,6 +273,17 @@ def main() -> None:
     target = predict_week(season, week, args.train_start, args.model)
     report = render(target, season, week)
     print("\n" + report)
+
+    # Live runs log the week's single biggest disagreement as a paper play — the
+    # out-of-sample forward test of the top-1 backtest. Idempotent per week, so
+    # the Thursday preview places the bet and the Saturday re-run is a no-op.
+    if args.auto or args.paper:
+        from nfl_betting_model import paper
+        play = paper.log_week(target, season, week)
+        if play:
+            side, matchup = play["model_side"], f"{play['away_team']} @ {play['home_team']}"
+            print(f"\nPaper play logged: {side} ({matchup}), "
+                  f"edge +{abs(play['edge']):.0%}, price {play['price_ml']}")
 
     if args.out:
         path = Path(args.out)

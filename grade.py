@@ -214,7 +214,15 @@ def main() -> None:
     all_picks = picks_mod.load_all_picks(season, week)
     scored = picks_mod.score(all_picks, s) if not all_picks.empty else None
 
+    # Settle the paper-play ledger against the freshly graded results, then show
+    # the running out-of-sample record.
+    from nfl_betting_model import paper
+    paper.settle(s, season)
+    paper_lines = paper.render(season, week)
+
     report = render(s, season, week, scored)
+    if paper_lines:
+        report += "\n" + "\n".join(paper_lines)
     print("\n" + report)
 
     if args.out:

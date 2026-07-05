@@ -22,7 +22,8 @@ import pandas as pd
 import streamlit as st
 from sklearn.metrics import brier_score_loss, log_loss
 
-from nfl_betting_model import cloud, picks as picks_mod, submit as submit_mod
+from nfl_betting_model import (
+    cloud, paper as paper_mod, picks as picks_mod, submit as submit_mod)
 
 st.set_page_config(page_title="NFL model — leaderboard", page_icon="🏈",
                    layout="wide")
@@ -278,6 +279,70 @@ def render_preview(preview: pd.DataFrame) -> None:
                "closing line, not a betting signal (moneyline is efficient).")
 
 
+def render_paper(ledger: pd.DataFrame) -> None:
+    """The out-of-sample paper-trade tracker for the single biggest disagreement.
+
+    Each week the model backs its side of the largest model-vs-market gap, flat
+    10 units at the previewed moneyline. A 2016-2025 backtest returned +23% here
+    (bootstrap-clear of zero) but that's in-sample; this is the forward test.
+    """
+    st.subheader("Paper play — biggest disagreement of the week")
+    st.caption("A flat **10u** paper bet on the model's side of the single "
+               "largest model-vs-market disagreement each week. No real money — "
+               "this is the honest **out-of-sample** test of a signal that "
+               "looked strong (+23% ROI) in a 2016-2025 backtest.")
+
+    if ledger is None or ledger.empty:
+        st.info("No paper plays logged yet. The first one posts when a weekly "
+                "preview runs — one play per week, graded the following Tuesday.")
+        return
+
+    s = paper_mod.summary(ledger)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Record", f"{s['wins']}-{s['losses']}")
+    c2.metric("Profit", f"{s['profit']:+.1f}u")
+    c3.metric("ROI", f"{s['roi']:+.1%}" if s["bets"] else "—")
+    c4.metric("Open", s["open"])
+
+    led = ledger.sort_values(["season", "week"]).copy()
+    settled = led[led["result"].isin(["win", "loss", "push"])]
+    if not settled.empty:
+        settled = settled.assign(cum=settled["profit"].cumsum(),
+                                 label=settled["season"].astype(int).astype(str)
+                                 + " Wk" + settled["week"].astype(int).astype(str))
+        line = (
+            alt.Chart(settled).mark_line(point=True).encode(
+                x=alt.X("label:N", sort=None, title=None),
+                y=alt.Y("cum:Q", title="Cumulative units"),
+                tooltip=["label", alt.Tooltip("cum:Q", title="Units",
+                                              format="+.1f")],
+            ).properties(height=280)
+        )
+        st.altair_chart(line, width="stretch")
+
+    rows = []
+    for _, r in led.iterrows():
+        if r["result"] == "win":
+            res = f"✓ +{float(r['profit']):.1f}u"
+        elif r["result"] == "loss":
+            res = f"✗ {float(r['profit']):.1f}u"
+        elif r["result"] == "open":
+            res = "open"
+        else:
+            res = str(r["result"])
+        price = f"{int(r['price_ml']):+d}" if pd.notna(r["price_ml"]) else "n/a"
+        rows.append({
+            "Week": int(r["week"]),
+            "Play": f"{r['model_side']} ({r['away_team']} @ {r['home_team']})",
+            "Edge": f"+{abs(float(r['edge'])):.0%}" if pd.notna(r["edge"]) else "—",
+            "Price": price,
+            "Result": res,
+        })
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.caption("One bet per week, priced when the preview ran (Thursday). "
+               "Backtest was strong but in-sample — trust the forward record.")
+
+
 def render_guide() -> None:
     """Render the friend-facing user guide (GUIDE.md at the repo root)."""
     try:
@@ -445,6 +510,8 @@ st.title("🏈 NFL model — pick'em & tracker")
 art = cloud.load_artifacts()
 graded, scored, preview, meta = (
     art["graded"], art["scored"], art["preview"], art["meta"])
+paper_ledger = paper_mod.load_ledger()
+has_paper = paper_ledger is not None and not paper_ledger.empty
 
 if graded is None and preview is None:
     st.warning("No data published yet. The local weekly runs export results here "
@@ -473,6 +540,8 @@ if graded is not None:
     names.append("Season tracker")
 if preview is not None:
     names.append("Weekly preview")
+if has_paper:
+    names.append("📈 Paper play")
 names.append("📖 Guide")
 made = st.tabs(names)
 tab_by_name = dict(zip(names, made))
@@ -496,6 +565,10 @@ if "Weekly preview" in tab_by_name:
     with tab_by_name["Weekly preview"]:
         render_preview(preview)
         render_open_ai_picks(meta)
+
+if "📈 Paper play" in tab_by_name:
+    with tab_by_name["📈 Paper play"]:
+        render_paper(paper_ledger)
 
 if "📖 Guide" in tab_by_name:
     with tab_by_name["📖 Guide"]:
