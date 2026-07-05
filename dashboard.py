@@ -26,7 +26,7 @@ from predict import predict_week, _prob_str
 from grade import grade_season, weekly_summary, _calibration, _record
 from nfl_betting_model import (
     data, picks as picks_mod, submit as submit_mod, llm_picker as llm_mod,
-    chat as chat_mod)
+    chat as chat_mod, paper as paper_mod)
 from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
@@ -39,10 +39,11 @@ def _predict(season: int, week: int, train_start: int, kind: str) -> pd.DataFram
     """Cached wrapper: training is expensive, so memoize per slate+model."""
     target = predict_week(season, week, train_start, kind)
     keep = [
-        "home_team", "away_team", "model_home_prob", "market_home_prob",
-        "edge", "driver", "home_win",
+        "game_id", "home_team", "away_team", "model_home_prob",
+        "market_home_prob", "edge", "driver", "home_win",
+        "home_moneyline", "away_moneyline",
     ]
-    return target[keep].reset_index(drop=True)
+    return target[[c for c in keep if c in target.columns]].reset_index(drop=True)
 
 
 @st.cache_data(show_spinner=False)
@@ -664,6 +665,96 @@ def render_ask(provider: str, temperature: float) -> None:
         history.append(("assistant", ans))
 
 
+def render_paper() -> None:
+    """Out-of-sample paper tracker + a live "log this week's play" control.
+
+    The tracker view mirrors the cloud app; locally you can also compute the
+    current week's single biggest disagreement and log it to the shared ledger
+    (predictions/cloud/paper_plays.csv), the same one the Thursday cron writes.
+    """
+    st.caption("A flat **10u** paper bet on the model's side of the single "
+               "largest model-vs-market disagreement each week — the honest "
+               "**out-of-sample** test of a signal that hit +23% in a 2016-2025 "
+               "backtest (in-sample). One play per week, first log wins.")
+
+    # Live: log the play for a previewed week.
+    if "preview" in st.session_state:
+        p_season, p_week, p_train, p_kind = st.session_state["preview"]
+        try:
+            frame = _predict(int(p_season), int(p_week), int(p_train), p_kind)
+        except Exception:  # noqa: BLE001
+            frame = None
+        if frame is not None and not frame.empty and "game_id" in frame.columns:
+            top = frame.reindex(frame["edge"].abs().sort_values(
+                ascending=False).index).iloc[0]
+            side = _favoured(top)
+            bet_home = top["edge"] > 0
+            price = top.get("home_moneyline") if bet_home else top.get("away_moneyline")
+            price_s = f"{int(price):+d}" if pd.notna(price) else "n/a"
+            st.info(f"**{p_season} Week {p_week} play:** {side} "
+                    f"({top['away_team']} @ {top['home_team']}) — edge "
+                    f"+{abs(top['edge']):.0%}, price {price_s}")
+            if st.button("Log this play to the ledger", type="primary",
+                         key="log_paper_play"):
+                play = paper_mod.log_week(frame, int(p_season), int(p_week))
+                if play:
+                    st.success(f"Logged {play['model_side']} for "
+                               f"{p_season} Wk {p_week} (or it was already logged).")
+    else:
+        st.info("Run a **Weekly preview** first, then this tab can log that "
+                "week's biggest-disagreement play.")
+
+    # Tracker: the persisted ledger.
+    ledger = paper_mod.load_ledger()
+    st.subheader("Season ledger")
+    if ledger is None or ledger.empty:
+        st.info("No paper plays logged yet. Log one above, or wait for the "
+                "Thursday preview cron to post Week 1's automatically.")
+        return
+
+    s = paper_mod.summary(ledger)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Record", f"{s['wins']}-{s['losses']}")
+    c2.metric("Profit", f"{s['profit']:+.1f}u")
+    c3.metric("ROI", f"{s['roi']:+.1%}" if s["bets"] else "—")
+    c4.metric("Open", s["open"])
+
+    led = ledger.sort_values(["season", "week"]).copy()
+    settled = led[led["result"].isin(["win", "loss", "push"])]
+    if not settled.empty:
+        settled = settled.assign(
+            cum=settled["profit"].cumsum(),
+            label=settled["season"].astype(int).astype(str) + " Wk"
+            + settled["week"].astype(int).astype(str))
+        st.altair_chart(
+            alt.Chart(settled).mark_line(point=True).encode(
+                x=alt.X("label:N", sort=None, title=None),
+                y=alt.Y("cum:Q", title="Cumulative units"),
+                tooltip=["label", alt.Tooltip("cum:Q", title="Units",
+                                              format="+.1f")],
+            ).properties(height=280), width="stretch")
+
+    rows = []
+    for _, r in led.iterrows():
+        if r["result"] == "win":
+            res = f"✓ +{float(r['profit']):.1f}u"
+        elif r["result"] == "loss":
+            res = f"✗ {float(r['profit']):.1f}u"
+        elif r["result"] == "open":
+            res = "open"
+        else:
+            res = str(r["result"])
+        price = f"{int(r['price_ml']):+d}" if pd.notna(r["price_ml"]) else "n/a"
+        rows.append({
+            "Week": int(r["week"]),
+            "Play": f"{r['model_side']} ({r['away_team']} @ {r['home_team']})",
+            "Edge": f"+{abs(float(r['edge'])):.0%}" if pd.notna(r["edge"]) else "—",
+            "Price": price,
+            "Result": res,
+        })
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -678,10 +769,10 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-(preview_tab, ask_tab, makepicks_tab, ai_tab, tracker_tab, pickem_tab,
- roster_tab) = st.tabs(
+(preview_tab, ask_tab, makepicks_tab, ai_tab, paper_tab, tracker_tab,
+ pickem_tab, roster_tab) = st.tabs(
     ["Weekly preview", "Ask the model", "Make picks", "AI expert",
-     "Season tracker", "Pick'em leaderboard", "Team roster"])
+     "📈 Paper play", "Season tracker", "Pick'em leaderboard", "Team roster"])
 
 with preview_tab:
     st.title(f"Preview — {season}")
@@ -764,6 +855,10 @@ with ai_tab:
                                 ai_notes)
     else:
         st.info("Pick a week and **Load slate** to add notes and generate picks.")
+
+with paper_tab:
+    st.title("📈 Paper play — biggest disagreement")
+    render_paper()
 
 with tracker_tab:
     st.title(f"Season tracker — {season}")
