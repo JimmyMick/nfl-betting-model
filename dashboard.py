@@ -99,6 +99,59 @@ def _display_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _screen_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
+    """Numeric-sortable version of the slate for ``st.dataframe``.
+
+    Each metric keeps its favoured team in a text cell (so you still see *who*
+    a percentage points at, e.g. "GB") right beside a separate numeric cell
+    holding just the number, so a header click on the "%" column sorts by the
+    percentage instead of by the team abbreviation. Formatting to ``%`` happens
+    in the ``column_config`` below.
+    """
+    rows = []
+    for _, r in df.iterrows():
+        m_team = r["home_team"] if r["model_home_prob"] >= 0.5 else r["away_team"]
+        k_team = r["home_team"] if r["market_home_prob"] >= 0.5 else r["away_team"]
+        row = {
+            "Matchup": f"{r['away_team']} @ {r['home_team']}",
+            "Model": m_team,
+            "Model %": max(r["model_home_prob"], 1 - r["model_home_prob"]) * 100,
+            "Market": k_team,
+            "Market %": max(r["market_home_prob"], 1 - r["market_home_prob"]) * 100,
+            "Edge": _favoured(r),
+            "Edge %": abs(r["edge"]) * 100,
+            "Key driver": r["driver"],
+        }
+        if graded:
+            if pd.isna(r["home_win"]):
+                row["Result"] = "—"
+            else:
+                winner = r["home_team"] if r["home_win"] == 1 else r["away_team"]
+                pick = r["home_team"] if r["model_home_prob"] >= 0.5 else r["away_team"]
+                row["Result"] = f"{winner} {'✓' if winner == pick else '✗'}"
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+_SCREEN_COLCFG = {
+    "Model": st.column_config.TextColumn(
+        "Model", help="Team the model favours."),
+    "Model %": st.column_config.NumberColumn(
+        "Model %", format="%.0f%%",
+        help="Model win probability for the favoured team. Sort by this column."),
+    "Market": st.column_config.TextColumn(
+        "Market", help="Team the market favours."),
+    "Market %": st.column_config.NumberColumn(
+        "Market %", format="%.0f%%",
+        help="Market-implied win probability for its favoured team."),
+    "Edge": st.column_config.TextColumn(
+        "Edge", help="Side the model likes more than the market."),
+    "Edge %": st.column_config.NumberColumn(
+        "Edge %", format="%.0f%%",
+        help="How much the model disagrees with the market (magnitude)."),
+}
+
+
 def _ascii(s: object) -> str:
     """Latin-1-safe text for fpdf core fonts (drivers use a Unicode arrow)."""
     s = str(s).replace("→", "->").replace("–", "-").replace("—", "-")
@@ -203,7 +256,12 @@ def render_preview(season: int, week: int, train_start: int, kind: str) -> None:
     confidence = df["model_home_prob"].apply(lambda p: max(p, 1 - p))
     by_prob = df.reindex(confidence.sort_values(ascending=False).index)
     display = _display_table(by_prob, graded)
-    st.dataframe(display, width="stretch", hide_index=True)
+    screen = _screen_table(by_prob, graded)
+    st.dataframe(screen, width="stretch", hide_index=True,
+                 column_config=_SCREEN_COLCFG)
+    st.caption("Each metric shows its favoured team beside a **%** column. "
+               "Click a **%** header (Model %, Market %, Edge %) to sort by the "
+               "percentage.")
 
     pdf_bytes = _preview_pdf(season, week, kind, display, disagreements, acc_line)
     st.download_button(
