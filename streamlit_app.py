@@ -298,24 +298,39 @@ def render_paper(ledger: pd.DataFrame) -> None:
         return
 
     s = paper_mod.summary(ledger)
+    w = paper_mod.whatif_summary(ledger)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Record", f"{s['wins']}-{s['losses']}")
     c2.metric("Profit", f"{s['profit']:+.1f}u")
     c3.metric("ROI", f"{s['roi']:+.1%}" if s["bets"] else "—")
     c4.metric("Open", s["open"])
+    if w["bets"]:
+        st.caption(f"**What-if ({paper_mod.WHATIF_NAME}):** {w['profit']:+.1f}u on "
+                   f"{w['staked']:.0f}u staked · ROI {w['roi']:+.1%} — a *derived* "
+                   "alternative where the stake scales with the size of the edge "
+                   "(capped at 3×). The flat 10u line stays the tracked baseline.")
 
-    led = ledger.sort_values(["season", "week"]).copy()
+    led = paper_mod.add_whatif(ledger.sort_values(["season", "week"]).copy())
     settled = led[led["result"].isin(["win", "loss", "push"])]
     if not settled.empty:
-        settled = settled.assign(cum=settled["profit"].cumsum(),
-                                 label=settled["season"].astype(int).astype(str)
-                                 + " Wk" + settled["week"].astype(int).astype(str))
+        settled = settled.assign(
+            label=settled["season"].astype(int).astype(str)
+            + " Wk" + settled["week"].astype(int).astype(str))
+        settled["Flat 10u"] = settled["profit"].cumsum()
+        settled[f"What-if ({paper_mod.WHATIF_NAME})"] = \
+            settled["whatif_profit"].cumsum()
+        long = settled.melt(
+            id_vars=["label"],
+            value_vars=["Flat 10u", f"What-if ({paper_mod.WHATIF_NAME})"],
+            var_name="Curve", value_name="cum")
         line = (
-            alt.Chart(settled).mark_line(point=True).encode(
+            alt.Chart(long).mark_line(point=True).encode(
                 x=alt.X("label:N", sort=None, title=None),
                 y=alt.Y("cum:Q", title="Cumulative units"),
-                tooltip=["label", alt.Tooltip("cum:Q", title="Units",
-                                              format="+.1f")],
+                color=alt.Color("Curve:N", title=None,
+                                scale=alt.Scale(range=["#3987e5", "#199e70"])),
+                tooltip=["label", "Curve",
+                         alt.Tooltip("cum:Q", title="Units", format="+.1f")],
             ).properties(height=280)
         )
         st.altair_chart(line, width="stretch")
@@ -331,16 +346,25 @@ def render_paper(ledger: pd.DataFrame) -> None:
         else:
             res = str(r["result"])
         price = f"{int(r['price_ml']):+d}" if pd.notna(r["price_ml"]) else "n/a"
+        if pd.notna(r["whatif_profit"]):
+            wi = f"{float(r['whatif_stake']):.0f}u → {float(r['whatif_profit']):+.1f}u"
+        elif r["result"] == "open" and pd.notna(r["whatif_stake"]):
+            wi = f"{float(r['whatif_stake']):.0f}u staked"
+        else:
+            wi = "—"
         rows.append({
             "Week": int(r["week"]),
             "Play": f"{r['model_side']} ({r['away_team']} @ {r['home_team']})",
             "Edge": f"+{abs(float(r['edge'])):.0%}" if pd.notna(r["edge"]) else "—",
             "Price": price,
             "Result": res,
+            "What-if": wi,
         })
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     st.caption("One bet per week, priced when the preview ran (Thursday). "
-               "Backtest was strong but in-sample — trust the forward record.")
+               "Backtest was strong but in-sample — trust the forward record. "
+               "The **What-if** column is a derived edge-proportional stake, not "
+               "a second real tracker.")
 
 
 def render_guide() -> None:

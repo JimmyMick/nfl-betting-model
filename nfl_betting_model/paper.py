@@ -147,6 +147,51 @@ def settle(graded: pd.DataFrame, season: int,
     return ledger
 
 
+# ── "What-if" alternative stake curve ────────────────────────────────────────
+# The live ledger stakes a flat 10u. This is a *derived* second column — an
+# out-of-sample look at an edge-proportional curve (stake grows with the size of
+# the disagreement), the highest-ROI scheme in the 2019-25 backtest. It is
+# computed on the fly from the same bets/prices, so it never touches the stored
+# ledger, the settle path, or the cron: the flat play stays the honest baseline.
+WHATIF_NAME = "Edge-proportional"
+WHATIF_REF_EDGE = 0.15   # an edge this big stakes exactly the base unit (10u)
+WHATIF_MAX_MULT = 3.0    # cap so one monster edge can't stake more than 3x base
+
+
+def whatif_stake(edge: float, base: float = DEFAULT_STAKE) -> float:
+    """Edge-proportional stake: base * (|edge| / REF), capped at MAX_MULT."""
+    if pd.isna(edge):
+        return float("nan")
+    mult = min(abs(float(edge)) / WHATIF_REF_EDGE, WHATIF_MAX_MULT)
+    return base * mult
+
+
+def add_whatif(ledger: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy with derived ``whatif_stake`` / ``whatif_profit`` columns."""
+    d = ledger.copy()
+    d["whatif_stake"] = d["edge"].apply(whatif_stake)
+    payout = american_to_payout(d["price_ml"])          # NaN-safe for no_price
+    won = (d["result"] == "win").to_numpy()
+    lost = (d["result"] == "loss").to_numpy()
+    d["whatif_profit"] = np.where(
+        won, d["whatif_stake"].to_numpy() * payout,
+        np.where(lost, -d["whatif_stake"].to_numpy(), np.nan))
+    return d
+
+
+def whatif_summary(ledger: pd.DataFrame | None = None,
+                   path: Path = LEDGER_PATH) -> dict:
+    """Running record + ROI for the edge-proportional what-if curve."""
+    if ledger is None:
+        ledger = load_ledger(path)
+    d = add_whatif(ledger)
+    settled = d[d["result"].isin(["win", "loss", "push"])]
+    staked = float(settled["whatif_stake"].sum())
+    profit = float(settled["whatif_profit"].sum()) if len(settled) else 0.0
+    return {"bets": len(settled), "staked": staked, "profit": profit,
+            "roi": profit / staked if staked else float("nan")}
+
+
 def summary(ledger: pd.DataFrame | None = None,
             path: Path = LEDGER_PATH) -> dict:
     """Running record + ROI over settled plays."""
@@ -179,13 +224,20 @@ def render(season: int, week: int, path: Path = LEDGER_PATH) -> list[str]:
         f"({s['open']} open)  ·  flat {DEFAULT_STAKE:.0f}u, model's side of the "
         f"week's single largest model-vs-market gap"
     )
+    w = whatif_summary(ledger)
+    if w["bets"]:
+        lines.append(
+            f"_What-if ({WHATIF_NAME}): {w['profit']:+.1f}u on "
+            f"{w['staked']:.0f}u staked · ROI {w['roi']:+.1%} — derived, "
+            f"stake scales with edge size; the flat line above stays the "
+            f"tracked baseline._")
     lines.append("")
 
-    show = ledger[ledger["season"] == season].copy()
+    show = add_whatif(ledger[ledger["season"] == season].copy())
     if show.empty:
         return lines
-    lines.append("| Week | Play | Edge | Price | Result |")
-    lines.append("|---|---|---|---|---|")
+    lines.append("| Week | Play | Edge | Price | Result | What-if |")
+    lines.append("|---|---|---|---|---|---|")
     for _, r in show.sort_values("week").iterrows():
         matchup = f"{r['away_team']} @ {r['home_team']}"
         play = f"{r['model_side']} ({matchup})"
@@ -199,5 +251,13 @@ def render(season: int, week: int, path: Path = LEDGER_PATH) -> list[str]:
             res = "open"
         else:
             res = str(r["result"])
-        lines.append(f"| {int(r['week'])} | {play} | {edge} | {price} | {res} |")
+        if pd.notna(r["whatif_profit"]):
+            wi = (f"{float(r['whatif_stake']):.0f}u → "
+                  f"{float(r['whatif_profit']):+.1f}u")
+        elif r["result"] == "open" and pd.notna(r["whatif_stake"]):
+            wi = f"{float(r['whatif_stake']):.0f}u staked"
+        else:
+            wi = "—"
+        lines.append(
+            f"| {int(r['week'])} | {play} | {edge} | {price} | {res} | {wi} |")
     return lines
