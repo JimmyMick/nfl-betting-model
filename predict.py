@@ -84,6 +84,21 @@ def _prob_str(home_team: str, away_team: str, home_prob: float) -> str:
     return f"{away_team} {1 - home_prob:.0%}"
 
 
+# An edge whose magnitude rounds to 0% is noise: the model and market agree and
+# the sign is a coin flip (e.g. model 75.66% vs market 75.72% on the home team
+# would render a spurious "away +0%"). Collapse those to a dash so a no-edge game
+# never looks like a directional lean.
+EDGE_ZERO = 0.005  # |edge| below this rounds to 0%
+
+
+def edge_label(edge: float, home_team: str, away_team: str) -> str:
+    """'JAX +12%' for a real edge, or '—' when it rounds to zero (no disagreement)."""
+    if pd.isna(edge) or abs(edge) < EDGE_ZERO:
+        return "—"
+    side = home_team if edge > 0 else away_team
+    return f"{side} +{abs(edge):.0%}"
+
+
 def _drivers(target: pd.DataFrame) -> list[str]:
     """For each game, name the strongest factor *supporting the model's pick* —
     the largest z-scored diff whose sign agrees with the model's leaned side.
@@ -216,8 +231,7 @@ def render(target: pd.DataFrame, season: int, week: int) -> str:
         matchup = f"{r['away_team']} @ {r['home_team']}"
         model_s = _prob_str(r["home_team"], r["away_team"], r["model_home_prob"])
         mkt_s = _prob_str(r["home_team"], r["away_team"], r["market_home_prob"])
-        side = r["home_team"] if r["edge"] > 0 else r["away_team"]
-        edge_s = f"{side} +{abs(r['edge']):.0%}"
+        edge_s = edge_label(r["edge"], r["home_team"], r["away_team"])
         row = f"| {matchup} | {model_s} | {mkt_s} | {edge_s} | {r['driver']} |"
         if graded:
             if pd.isna(r["home_win"]):

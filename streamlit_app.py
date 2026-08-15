@@ -251,6 +251,19 @@ def render_tracker(graded: pd.DataFrame) -> None:
                "is expected — the model is a forecaster, not a beater.")
 
 
+# A sub-0.5% edge rounds to 0% — the model and market agree and the sign is
+# noise, so render a dash instead of a spurious "TEAM +0%". (Mirrors
+# predict.edge_label; kept local so the cloud app avoids the heavy predict import.)
+_EDGE_ZERO = 0.005
+
+
+def _edge_label(edge: float, home_team: str, away_team: str) -> str:
+    if pd.isna(edge) or abs(edge) < _EDGE_ZERO:
+        return "—"
+    side = home_team if edge > 0 else away_team
+    return f"{side} +{abs(edge):.0%}"
+
+
 def render_preview(preview: pd.DataFrame) -> None:
     df = preview.copy()
     df["fav"] = np.where(df["edge"] > 0, df["home_team"], df["away_team"])
@@ -271,12 +284,16 @@ def render_preview(preview: pd.DataFrame) -> None:
             "Matchup": f"{r['away_team']} @ {r['home_team']}",
             "Model": _prob_str(r["home_team"], r["away_team"], r["model_home_prob"]),
             "Market": _prob_str(r["home_team"], r["away_team"], r["market_home_prob"]),
-            "Edge": f"{r['fav']} +{abs(r['edge']):.0%}",
+            "Edge": _edge_label(r["edge"], r["home_team"], r["away_team"]),
             "Key driver": r["driver"],
         })
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-    st.caption("Probability/preview tool — model edges are disagreement with the "
-               "closing line, not a betting signal (moneyline is efficient).")
+    st.caption("**Edge** = the side the model values *more than the market prices "
+               "it* — a mispricing, not a winner pick. It can name the underdog "
+               "even when the model still expects the favourite to win (it just "
+               "rates the favourite lower than Vegas). Probability/preview tool: "
+               "edges are disagreement with the closing line, not a betting "
+               "signal (moneyline is efficient).")
 
 
 def render_paper(ledger: pd.DataFrame) -> None:

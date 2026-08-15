@@ -42,8 +42,12 @@ Change your mind? Re-submit anytime **before kickoff** — your last answer coun
 ## 📊 Weekly preview (read it, don't worship it)
 - **Model** — the model's win % for its pick, e.g. `BUF 74%`.
 - **Market** — what Vegas implies.
-- **Edge** — how much *more* the model likes its side than Vegas. A
-  *disagreement*, not a tip.
+- **Edge** — the side the model values **more than Vegas prices it**, and by how
+  much. A *mispricing*, not a winner pick — and **not a tip**. Heads up: it can
+  name the **underdog even when the model still thinks the favorite wins** — that
+  just means the model has the favorite lower than Vegas does (e.g. model has the
+  Chargers 75% to win but Vegas says 82%, so the leftover value shows as
+  "ARI +7%"). It's about *price*, not *who wins*.
 - **Key driver** — the main reason (QB, talent, form, injuries…).
 
 > ⚠️ **A big edge is NOT a betting tip.** It usually means the *model* is wrong,

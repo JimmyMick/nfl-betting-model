@@ -22,7 +22,7 @@ import pandas as pd
 import streamlit as st
 from fpdf import FPDF
 
-from predict import predict_week, _prob_str
+from predict import predict_week, _prob_str, edge_label, EDGE_ZERO
 from grade import grade_season, weekly_summary, _calibration, _record
 from nfl_betting_model import (
     data, picks as picks_mod, submit as submit_mod, llm_picker as llm_mod,
@@ -80,12 +80,11 @@ def _display_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
     """Format the raw frame into the human-readable preview table."""
     rows = []
     for _, r in df.iterrows():
-        side = _favoured(r)
         row = {
             "Matchup": f"{r['away_team']} @ {r['home_team']}",
             "Model": _prob_str(r["home_team"], r["away_team"], r["model_home_prob"]),
             "Market": _prob_str(r["home_team"], r["away_team"], r["market_home_prob"]),
-            "Edge": f"{side} +{abs(r['edge']):.0%}",
+            "Edge": edge_label(r["edge"], r["home_team"], r["away_team"]),
             "Key driver": r["driver"],
         }
         if graded:
@@ -118,7 +117,8 @@ def _screen_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
             "Model %": max(r["model_home_prob"], 1 - r["model_home_prob"]) * 100,
             "Market": k_team,
             "Market %": max(r["market_home_prob"], 1 - r["market_home_prob"]) * 100,
-            "Edge": _favoured(r),
+            # A sub-0.5% edge rounds to 0% — the sign is noise, so show no side.
+            "Edge": "—" if abs(r["edge"]) < EDGE_ZERO else _favoured(r),
             "Edge %": abs(r["edge"]) * 100,
             "Key driver": r["driver"],
         }
@@ -145,10 +145,14 @@ _SCREEN_COLCFG = {
         "Market %", format="%.0f%%",
         help="Market-implied win probability for its favoured team."),
     "Edge": st.column_config.TextColumn(
-        "Edge", help="Side the model likes more than the market."),
+        "Edge", help="Side the model values MORE than the market prices it — not "
+        "a winner pick. Can point to the underdog even when the model still "
+        "expects the favourite to win (it just has the favourite lower than "
+        "Vegas)."),
     "Edge %": st.column_config.NumberColumn(
         "Edge %", format="%.0f%%",
-        help="How much the model disagrees with the market (magnitude)."),
+        help="How many points higher the model rates the Edge side than the "
+        "market does (magnitude of the disagreement)."),
 }
 
 
@@ -261,7 +265,10 @@ def render_preview(season: int, week: int, train_start: int, kind: str) -> None:
                  column_config=_SCREEN_COLCFG)
     st.caption("Each metric shows its favoured team beside a **%** column. "
                "Click a **%** header (Model %, Market %, Edge %) to sort by the "
-               "percentage.")
+               "percentage. **Edge** = the side the model values *more than the "
+               "market prices it* — a mispricing, not a winner pick. It can name "
+               "the underdog even when the model still expects the favourite to "
+               "win (it just rates the favourite lower than Vegas does).")
 
     pdf_bytes = _preview_pdf(season, week, kind, display, disagreements, acc_line)
     st.download_button(
