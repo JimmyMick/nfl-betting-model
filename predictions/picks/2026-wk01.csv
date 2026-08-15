@@ -1,5 +1,5 @@
 season,week,game_id,gameday,away_team,home_team,player,pick,confidence,rationale
-2026,1,2026_01_ARI_LAC,,ARI,LAC,JMack,ARI,77,
+2026,1,2026_01_ARI_LAC,,ARI,LAC,JMack,LAC,77,
 2026,1,2026_01_ATL_PIT,,ATL,PIT,JMack,ATL,62,
 2026,1,2026_01_BAL_IND,,BAL,IND,JMack,BAL,64,
 2026,1,2026_01_BUF_HOU,,BUF,HOU,JMack,BUF,79,
@@ -7,7 +7,7 @@ season,week,game_id,gameday,away_team,home_team,player,pick,confidence,rationale
 2026,1,2026_01_CLE_JAX,,CLE,JAX,JMack,JAX,59,
 2026,1,2026_01_DAL_NYG,,DAL,NYG,JMack,DAL,64,
 2026,1,2026_01_DEN_KC,,DEN,KC,JMack,DEN,85,
-2026,1,2026_01_GB_MIN,,GB,MIN,JMack,MIN,55,
+2026,1,2026_01_GB_MIN,,GB,MIN,JMack,MIN,70,
 2026,1,2026_01_MIA_LV,,MIA,LV,JMack,MIA,79,
 2026,1,2026_01_NE_SEA,,NE,SEA,JMack,SEA,69,
 2026,1,2026_01_NO_DET,,NO,DET,JMack,DET,69,
