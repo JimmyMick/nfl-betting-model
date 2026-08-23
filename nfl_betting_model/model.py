@@ -83,13 +83,19 @@ def train(
     feature_cols: list[str],
     kind: str = "logistic",
     calibrate: str | None = None,
+    calib_season: int | None = None,
 ):
     """Fit the model. ``calibrate`` in {None, "isotonic", "sigmoid"}.
 
-    Calibration is time-aware: the base model is fit on every season except the
-    latest in ``train_df``, and the calibrator is fit on that held-out latest
-    season — so the mapping is learned on out-of-sample probabilities without
-    leaking the test season.
+    Calibration is time-aware: the base model is fit on every season except one
+    held-out calibration season, and the calibrator is fit on that season — so
+    the mapping is learned on out-of-sample probabilities without leaking it.
+
+    ``calib_season`` picks that held-out season. Default (None) = the latest
+    season in ``train_df``, which is the original behaviour. When ``train_df``
+    also contains partial in-season games (weekly-refit training), pass the most
+    recent *complete* season here so those in-season rows train the base model
+    (via ``!= calib_season``) rather than being stolen by the calibrator.
     """
     if not calibrate:
         pipe = build_pipeline(kind)
@@ -97,8 +103,9 @@ def train(
         return pipe
 
     seasons = sorted(train_df["season"].unique())
-    calib_season = seasons[-1]
-    core = train_df[train_df["season"] < calib_season]
+    if calib_season is None or calib_season not in seasons:
+        calib_season = seasons[-1]
+    core = train_df[train_df["season"] != calib_season]
     cal = train_df[train_df["season"] == calib_season]
 
     base = build_pipeline(kind)

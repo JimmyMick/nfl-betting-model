@@ -273,6 +273,25 @@ rule: a model that scores season *S* is trained only on seasons `< S`. Combined
 with the within-season `shift(1)` features, no information from the predicted
 game (or its season's future) reaches the model.
 
+> **Documented dead-end — in-season weekly refit (2026).** We tested expanding
+> the training set *within* a season (before week *w*, refit on all prior seasons
+> **plus** that season's weeks `1…w-1`, still strictly leak-free) instead of
+> freezing the model at seasons `< S`. Since `predict.py` already retrains on
+> every weekly run, this is nearly free at runtime. Verdict on a 2021–2025
+> walk-forward (`validate_inseason_refit.py`): **not worth flipping.**
+> - *Uncalibrated*, the extra in-season rows genuinely help the base estimator
+>   (logistic 4–5/5 seasons; **gbm bigger, 4/5** — it's the more data-hungry
+>   model), confirming the intuition that recent data carries signal.
+> - *With the shipped sigmoid calibration*, the **logistic** gain washes out
+>   (logloss/Brier 2/5; only AUC/ranking improves 4/5) — the Platt step, fit on
+>   the held-out prior season, absorbs it. **gbm** keeps a real gain (4/5) but
+>   even gbm-with-refit still trails plain calibrated **logistic** (the live
+>   model) on 4/5 seasons, so it changes nothing you'd deploy.
+> `model.train` gained a backward-compatible `calib_season` arg (default = latest
+> training season = old behaviour) so the experiment can hold out the most recent
+> *complete* season and let in-season rows train the base. The live path
+> (`_train_for`) is unchanged — still seasons `< S`.
+
 ---
 
 ## 7. Evaluation
