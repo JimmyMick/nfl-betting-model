@@ -370,6 +370,14 @@ bootstrap flatters any strategy carried by one hot year).
   trusted) as the **paper play** (`paper.py`) so 2026+ is a clean out-of-sample
   scoreboard.
 
+  *Dilution — the edge is only in the single most extreme game.* Adding more
+  games per week kills it (2019–2025, same window): **top-1 +21.8%** (cleared) →
+  **top-2 ~+5–8%** (season-block CI **[−12.8%, +21.7%]**, P(ROI>0) 82% —
+  straddles zero, one −44.5% 2022 swamps it) → **top-3 +9.7%** both-sides /
+  +13.2% dogs-only (also short of the bar). The 2nd-biggest disagreement each
+  week is already indistinguishable from break-even, so the paper play stays
+  top-**1** only.
+
 - **Pick crossover** (`backtest_crossover.py`): bet the model's side only when the
   model and market pick *different winners* (the model likes the market's dog to
   win outright). Raw (2019–2025): 287 bets, +8.2% ROI — but **entirely carried by
