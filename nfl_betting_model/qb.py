@@ -5,6 +5,22 @@ de-facto starter). This is derived from the game's own play-by-play, but the
 feature value — the QB's season *launch* OVR — is fixed before the season, so it
 carries no in-game outcome. In practice the starting QB is announced ~90 min
 before kickoff, so using it as a pre-game feature is realistic, not leakage.
+
+Known, accepted caveat (reviewed 2026 — deliberately kept as-is)
+---------------------------------------------------------------
+"Most dropbacks in the game" is a *post-kickoff* fact, so in the rare case where
+the intended starter is replaced (mid-game injury, blowout benching, a late
+scratch whose backup then throws more) this labels the QB who actually played,
+not the one announced pre-game — a mild leak. It is deliberately tolerated:
+  * The value is a fixed preseason OVR, so it only bites when the realized passer
+    differs from the intended starter AND their OVRs differ — a few games a year.
+  * The live prediction path never touches the target game's pbp: predict.py's
+    ``_carry_forward`` fills the upcoming week's QB from the last known starter,
+    so serving is already strictly pre-game. The leak is confined to historical
+    (training) rows.
+A fully leak-free swap (carry-forward the prior game's starter, or pre-game depth
+charts) was weighed and judged not worth the accuracy tradeoff / re-validation
+cost for so narrow an effect. Revisit if the QB feature is reworked.
 """
 
 from __future__ import annotations

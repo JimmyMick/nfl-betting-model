@@ -24,7 +24,9 @@ from neo4j import GraphDatabase
 
 DEFAULT_URI = "bolt://localhost:7687"
 DEFAULT_USER = "neo4j"
-DEFAULT_PASSWORD = "password"
+# No default password: a well-known fallback like "password" silently connects to
+# (and could expose) any reachable Neo4j. The password must be supplied
+# explicitly or via NEO4J_PASSWORD.
 
 # Batch size for UNWIND-based writes.
 _BATCH = 1000
@@ -52,7 +54,12 @@ class GraphStore:
                  password: str | None = None):
         self.uri = uri or os.getenv("NEO4J_URI", DEFAULT_URI)
         self.user = user or os.getenv("NEO4J_USER", DEFAULT_USER)
-        self.password = password or os.getenv("NEO4J_PASSWORD", DEFAULT_PASSWORD)
+        self.password = password or os.getenv("NEO4J_PASSWORD")
+        if not self.password:
+            raise RuntimeError(
+                "NEO4J_PASSWORD must be set (or pass password=...). Refusing to "
+                "connect with a default password."
+            )
         self._driver = GraphDatabase.driver(
             self.uri, auth=(self.user, self.password)
         )
