@@ -295,6 +295,12 @@ def main() -> None:
             side, matchup = play["model_side"], f"{play['away_team']} @ {play['home_team']}"
             print(f"\nPaper play logged: {side} ({matchup}), "
                   f"edge +{abs(play['edge']):.0%}, price {play['price_ml']}")
+        # Second forward tracker: the spread (ATS) strategy (§7f) — logs every
+        # game whose model-implied spread diverges from the line by >= 2 pts.
+        from nfl_betting_model import paper_spread
+        ats = paper_spread.log_week(target, season, week)
+        if ats:
+            print(f"Spread paper play logged: {len(ats)} ATS bet(s) this week.")
 
     if args.out:
         path = Path(args.out)

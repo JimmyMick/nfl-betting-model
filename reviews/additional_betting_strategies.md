@@ -36,15 +36,16 @@ overlaps `form_margin`. Near-certain nulls.
 | Tier | Strategy | Status / rationale |
 |---|---|---|
 | **1** | **C1 availability-driven** | **TESTED → did NOT clear** (−4.1% ROI, season-block CI [−11.7%, +0.9%], P>0 10%). Availability is a real *calibration* signal but points mostly at favorites (avg ML −191); you win 62% but need ~66% — vig-bound. The market already prices injuries. See RATING.md §7f. |
-| **2** | **E1 spreads** | Best remaining bet: the only structurally-different market (symmetric −110 ≈ 4.5% hold vs favorite ML juice 5–9%). Our "efficient" verdict is moneyline-only; a marginal edge could survive the lower vig. Needs a spread→prob calibration. |
+| **2** | **E1 spreads** | **TESTED → closest near-miss, forward-tracked.** With a key-number-aware empirical spread↔win-prob mapping, betting the model's side ATS at |gap|≥2 pts returns +2.0% ROI / 53.4% cover, positive at every threshold — but season-block CI [−1.5%, +5.9%], P>0 85%, so it does NOT clear at 7 seasons. Closest to an edge besides top-1 (pre-registered, not one-season-carried); the lower −110 vig gets it there. Now a second forward paper line (`paper_spread.py`); see RATING.md §7f. |
 | 3 | C2 Elo-only minimal model | Cheap; tests if washout features add noise to the betting tail. |
 | 4 | B3 late-season filter | Cheap temporal split, distinct mechanism (Elo converged). |
 | — | E2 CLV | Highest-value idea but **blocked on data** (no opening lines in nflreadpy). |
 | skip | A1/A2 (answered), B1/B2/B4/D1 (underpowered/priced), D2/G1 (overfitting), E3/F1/F2 (weak prior / new data) | |
 
-**Verdict:** C1 tested and failed (below). E1 (spreads) is the one genuinely new
-frontier worth running next; the rest are low expected value against the
-efficient-market prior and each costs ~7 training passes.
+**Verdict:** C1 tested and failed. E1 (spreads) tested — the closest near-miss
+yet (+2.0% ROI but P>0 only 85%), now forward-tracked as a second paper line.
+The remaining ideas (C2, B3, etc.) are low expected value against the
+efficient-market prior and each costs ~7 training passes; run only on request.
 
 ---
 

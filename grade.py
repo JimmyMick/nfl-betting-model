@@ -216,13 +216,17 @@ def main() -> None:
 
     # Settle the paper-play ledger against the freshly graded results, then show
     # the running out-of-sample record.
-    from nfl_betting_model import paper
+    from nfl_betting_model import paper, paper_spread
     paper.settle(s, season)
     paper_lines = paper.render(season, week)
+    paper_spread.settle(s, season)
+    spread_lines = paper_spread.render(season, week)
 
     report = render(s, season, week, scored)
     if paper_lines:
         report += "\n" + "\n".join(paper_lines)
+    if spread_lines:
+        report += "\n" + "\n".join(spread_lines)
     print("\n" + report)
 
     if args.out:

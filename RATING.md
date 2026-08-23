@@ -357,7 +357,7 @@ viewed through a confidence filter rather than ROI. Surfaced live as the **top
 pick / top-3 record** on the season tracker ([§8b](#8b-grading--season-tracker-gradepy)),
 not as a betting recommendation.
 
-### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`, `backtest_agreement.py`, `backtest_dogfade.py`, `backtest_availability.py`)
+### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`, `backtest_agreement.py`, `backtest_dogfade.py`, `backtest_availability.py`, `backtest_spread.py`)
 Two flat-stake experiments that bet the model's side of a model-vs-market
 disagreement, both judged by a **season-block bootstrap** (resample whole
 seasons — the honest test that respects within-season correlation; a bet-level
@@ -414,10 +414,28 @@ bootstrap flatters any strategy carried by one hot year).
   62% but need ~66%), because the market already prices injuries into the line. The
   probability model improves; the price doesn't move.
 
+- **Spread / ATS betting** (`backtest_spread.py`, strategy E1): the only test on a
+  *different market*. Convert the model's win prob to an implied home spread and
+  bet the model's side ATS at −110 when |implied − line| ≥ 2 pts (pre-registered).
+  The mapping matters: a plain normal approximation (`σ·Φ⁻¹(p)`) lands break-even
+  (−0.7% at N=2), but the **key-number-aware empirical mapping** (isotonic
+  spread→P(home win), fit on prior games, inverted) turns it **positive across
+  every threshold** (+1.1% to +2.8%; N=2 = **+2.0% ROI, 53.4% cover** vs 52.4%
+  breakeven). **Closest any strategy has come to an edge besides top-1** — and
+  cleaner than the crossover (pre-registered threshold, positive at all N, not
+  carried by one season). But it **still does NOT clear**: season-block 95% CI
+  **[−1.5%, +5.9%]**, P(ROI>0) 85%. A ~1-point cover edge can't be proven at 7
+  seasons. The lower symmetric vig (−110 ≈ 4.5% vs 5–9% favourite ML juice) is
+  what gets it close. **Forward-tracked** (`paper_spread.py`, second paper line
+  beside top-1) so 2026+ adds out-of-sample seasons toward — or away from —
+  significance; the Tuesday grade report shows its running ATS record.
+
 Through-line across 7f: only the single **top-1 biggest disagreement** per week
-has ever survived the honest bootstrap; every broader cut (crossovers, chalk,
+has cleared the honest bootstrap; the **spread (ATS) strategy** is a promising
+un-cleared near-miss (forward-tracked); every other cut (crossovers, chalk,
 confidence-sorted favourites, dog fades, availability-driven) is vig-bound — the
-same market-efficiency verdict as [§7d](#7d-betting-roi-vs-the-closing-line).
+same market-efficiency verdict as [§7d](#7d-betting-roi-vs-the-closing-line),
+with the caveat that a lower-vig market (spreads) comes materially closer.
 
 ---
 
