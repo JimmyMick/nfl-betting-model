@@ -22,6 +22,12 @@ Design notes
   app can render it. It is the record, not scratch output.
 * Dependency-light (pandas + stdlib + betting.american_to_payout) to keep the
   cloud requirements tiny.
+* **Logistic only, by design.** The play is logged from the live preview, which
+  runs the logistic model — the one whose top-1 result cleared the bootstrap and
+  whose tails are saner (top-1 is a tail event, exactly where gbm is weakest). If
+  gbm's biggest-edge game differs, that does NOT change the tracked bet: requiring
+  model agreement is a different, unbacktested strategy (fewer bets, needs its own
+  bootstrap), and betting both is just top-2, which dilutes to break-even.
 """
 
 from __future__ import annotations

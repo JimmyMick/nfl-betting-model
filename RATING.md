@@ -368,7 +368,11 @@ bootstrap flatters any strategy carried by one hot year).
   block 95% CI ≈ [+4%, +43%], P(ROI>0) ≈ 99%, 8/10 seasons positive. This is the
   only moneyline strategy to survive the honest test; it is forward-tracked (not
   trusted) as the **paper play** (`paper.py`) so 2026+ is a clean out-of-sample
-  scoreboard.
+  scoreboard. **Logistic only, by design** — that's the model that cleared the
+  bootstrap and has saner tails (top-1 is a tail event). A differing gbm top-1
+  does not change the tracked bet; a "require both models agree" filter would be a
+  separate, unbacktested strategy, and betting both is just top-2 (dilutes to
+  break-even).
 
   *Dilution — the edge is only in the single most extreme game.* Adding more
   games per week kills it (2019–2025, same window): **top-1 +21.8%** (cleared) →
