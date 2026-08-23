@@ -357,7 +357,7 @@ viewed through a confidence filter rather than ROI. Surfaced live as the **top
 pick / top-3 record** on the season tracker ([§8b](#8b-grading--season-tracker-gradepy)),
 not as a betting recommendation.
 
-### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`, `backtest_agreement.py`, `backtest_dogfade.py`)
+### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`, `backtest_agreement.py`, `backtest_dogfade.py`, `backtest_availability.py`)
 Two flat-stake experiments that bet the model's side of a model-vs-market
 disagreement, both judged by a **season-block bootstrap** (resample whole
 seasons — the honest test that respects within-season correlation; a bet-level
@@ -403,10 +403,21 @@ bootstrap flatters any strategy carried by one hot year).
   **real** (fading it recovers the excess loss) but the recovery is almost exactly
   the two-sided vig, so neither side is an edge. Both documented, **not tracked.**
 
+- **Availability-driven bets** (`backtest_availability.py`, strategy C1 from
+  `reviews/additional_betting_strategies.md`): bet the model's side only when
+  availability *materially and directionally* drives the disagreement — decomposed
+  as `full_prob − no-avail_prob`, pre-registered threshold |shift| ≥ 0.03. Idea:
+  lean on the one feature that clears the calibration bar and is orthogonal to team
+  strength. **Did NOT clear** (2019–2025, 264 bets): −4.1% ROI, season-block CI
+  **[−11.7%, +0.9%]**, P(ROI>0) 10%. Availability is a real *calibration* signal
+  but not a moneyline *edge* — it points mostly at favourites (avg ML −191; you win
+  62% but need ~66%), because the market already prices injuries into the line. The
+  probability model improves; the price doesn't move.
+
 Through-line across 7f: only the single **top-1 biggest disagreement** per week
 has ever survived the honest bootstrap; every broader cut (crossovers, chalk,
-confidence-sorted favourites, dog fades) is vig-bound — the same market-efficiency
-verdict as [§7d](#7d-betting-roi-vs-the-closing-line).
+confidence-sorted favourites, dog fades, availability-driven) is vig-bound — the
+same market-efficiency verdict as [§7d](#7d-betting-roi-vs-the-closing-line).
 
 ---
 
