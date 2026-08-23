@@ -357,7 +357,7 @@ viewed through a confidence filter rather than ROI. Surfaced live as the **top
 pick / top-3 record** on the season tracker ([§8b](#8b-grading--season-tracker-gradepy)),
 not as a betting recommendation.
 
-### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`)
+### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`, `backtest_agreement.py`, `backtest_dogfade.py`)
 Two flat-stake experiments that bet the model's side of a model-vs-market
 disagreement, both judged by a **season-block bootstrap** (resample whole
 seasons — the honest test that respects within-season correlation; a bet-level
@@ -380,6 +380,25 @@ bootstrap flatters any strategy carried by one hot year).
   2021 dependence. Verdict: **suggestive, not proven** — fails the gate top-1
   passed, leans on one season, and the threshold was chosen post-hoc (which the
   bootstrap doesn't penalise). Documented and **not tracked live.**
+
+- **Consensus favorite + confidence direction** (`backtest_agreement.py`,
+  `backtest_dogfade.py`): the chalk side of the ledger. Betting *every* consensus
+  favourite (model and market favour the same team, 2019–2025, 1,666 bets) loses
+  **−2.6%** — a 69% win rate undone by laying avg −307 juice, i.e. the vig. It
+  gets *worse*, not better, when filtered to games where the model is **more
+  confident than the market** on that favourite (**−7.3%**, season-block CI
+  ≈ [−12%, −1%], P(ROI>0) 1.4%): the model over-rates chalk the market prices
+  sharper, so its extra favourite-confidence is *anti*-predictive. Flipping that
+  slice to **fade the favourite (bet the dog)** recovers the whole ~7.6-pt swing
+  but lands at **+0.3% ROI — dead break-even** (season-block CI [−11.5%, +10.1%],
+  P(ROI>0) 52%, negative ex-2021). Takeaway: the favourite-over-confidence bias is
+  **real** (fading it recovers the excess loss) but the recovery is almost exactly
+  the two-sided vig, so neither side is an edge. Both documented, **not tracked.**
+
+Through-line across 7f: only the single **top-1 biggest disagreement** per week
+has ever survived the honest bootstrap; every broader cut (crossovers, chalk,
+confidence-sorted favourites, dog fades) is vig-bound — the same market-efficiency
+verdict as [§7d](#7d-betting-roi-vs-the-closing-line).
 
 ---
 
