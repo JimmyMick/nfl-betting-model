@@ -33,8 +33,9 @@ def detect_target(mode: str, season: int | None = None,
     """Return ``(season, week)`` for the given ``mode``.
 
     ``preview`` — the earliest unplayed week whose first game is within
-    ``horizon_days`` (the imminent slate). ``grade`` — the most recent week with
-    completed games.
+    ``horizon_days`` (the imminent slate). ``grade`` — the most recent *fully
+    completed* week (every scheduled game final), so a still-in-progress week
+    (e.g. before its Monday-night game) is never picked mid-week.
 
     Raises ``SystemExit`` when there's nothing to do (off-season / season over /
     next slate still too far out), so a scheduled run can exit quietly instead of
@@ -61,8 +62,14 @@ def detect_target(mode: str, season: int | None = None,
             )
         return season, wk
     if mode == "grade":
-        done = games[played]
-        if done.empty:
+        if not played.any():
             raise SystemExit(f"{season} season hasn't started — nothing to grade.")
-        return season, int(done["week"].max())
+        # A week is gradable only when ALL its scheduled games are final, so a
+        # partially-played current week (Sunday done, Monday pending) falls back
+        # to the last fully-completed week instead of grading a half-slate.
+        fully_done = games.groupby("week")["home_win"].apply(lambda s: s.notna().all())
+        complete = fully_done[fully_done].index
+        if len(complete) == 0:
+            raise SystemExit(f"{season} has no fully completed week yet — nothing to grade.")
+        return season, int(complete.max())
     raise SystemExit(f"Unknown mode {mode!r} (use 'preview' or 'grade').")
