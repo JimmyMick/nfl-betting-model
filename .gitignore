@@ -18,6 +18,9 @@ __pycache__/
 .cache/
 *.parquet
 
+# Local wttr.in weather cache (llm_picker.game_weather) — scratch, not the record
+data/weather_cache.json
+
 # Secrets / local env
 .env
 

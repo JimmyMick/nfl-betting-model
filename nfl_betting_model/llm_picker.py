@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -119,29 +120,71 @@ def team_injuries(inj: pd.DataFrame, season: int, week: int, team: str,
     return "; ".join(parts)
 
 
+# Local cache for wttr.in lookups, keyed by "city|gameday". Weather is only a
+# best-effort context hint, so a several-hour TTL is plenty: it stops repeated
+# pick runs (and same-city games in one slate) from hammering the third-party
+# service or leaking the caller's IP on every call. Lives under data/ (gitignored,
+# like the other caches). The cloud app never calls this — it's local-only.
+_WEATHER_CACHE = Path(os.getenv("WEATHER_CACHE", "data/weather_cache.json"))
+_WEATHER_TTL_S = 6 * 3600
+
+
+def _weather_cache_load() -> dict:
+    try:
+        return json.loads(_WEATHER_CACHE.read_text())
+    except Exception:  # missing/corrupt cache is fine — treat as empty
+        return {}
+
+
+def _weather_cache_save(cache: dict) -> None:
+    try:
+        _WEATHER_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _WEATHER_CACHE.write_text(json.dumps(cache))
+    except Exception:  # cache is best-effort; never let it break pick generation
+        pass
+
+
+def _fetch_weather(city: str, day: str | None) -> str:
+    """Uncached wttr.in lookup for a city + gameday date."""
+    r = httpx.get(f"https://wttr.in/{city}", params={"format": "j1"}, timeout=8)
+    r.raise_for_status()
+    data = r.json()
+    for d in data.get("weather", []):
+        if d.get("date") == day:
+            noon = d["hourly"][len(d["hourly"]) // 2]
+            return (f"{noon['tempF']}°F, wind {noon['windspeedMiles']} mph, "
+                    f"{noon['weatherDesc'][0]['value']}")
+    cur = data["current_condition"][0]
+    return (f"{cur['temp_F']}°F, wind {cur['windspeedMiles']} mph, "
+            f"{cur['weatherDesc'][0]['value']} (current)")
+
+
 def game_weather(home_team: str, roof, gameday) -> str:
-    """Best-effort weather string; 'indoor' for domes, else a wttr.in forecast."""
+    """Best-effort weather string; 'indoor' for domes, else a cached wttr.in forecast."""
     roof_s = str(roof).lower() if roof is not None else ""
     if roof_s in ("dome", "closed"):
         return "indoor (climate-controlled)"
     city = _TEAM_CITY.get(home_team)
     if not city:
         return "unknown"
+
+    day = str(pd.to_datetime(gameday).date()) if gameday is not None else None
+    key = f"{city}|{day}"
+    cache = _weather_cache_load()
+    hit = cache.get(key)
+    if hit and (time.time() - hit.get("fetched_at", 0)) < _WEATHER_TTL_S:
+        return hit["weather"]
+
     try:
-        r = httpx.get(f"https://wttr.in/{city}", params={"format": "j1"}, timeout=8)
-        r.raise_for_status()
-        data = r.json()
-        day = str(pd.to_datetime(gameday).date()) if gameday is not None else None
-        for d in data.get("weather", []):
-            if d.get("date") == day:
-                noon = d["hourly"][len(d["hourly"]) // 2]
-                return (f"{noon['tempF']}°F, wind {noon['windspeedMiles']} mph, "
-                        f"{noon['weatherDesc'][0]['value']}")
-        cur = data["current_condition"][0]
-        return (f"{cur['temp_F']}°F, wind {cur['windspeedMiles']} mph, "
-                f"{cur['weatherDesc'][0]['value']} (current)")
+        weather = _fetch_weather(city, day)
     except Exception:
-        return "unavailable"
+        # Fall back to a stale cached value if we have one, else report unavailable.
+        # Don't cache the failure, so a transient outage retries next call.
+        return hit["weather"] if hit else "unavailable"
+
+    cache[key] = {"weather": weather, "fetched_at": time.time()}
+    _weather_cache_save(cache)
+    return weather
 
 
 def assemble_context(games: pd.DataFrame, inj: pd.DataFrame, season: int,
