@@ -96,8 +96,12 @@ def main() -> None:
     ap.add_argument("--no-epa", action="store_true", help="skip play-by-play EPA")
     ap.add_argument("--no-madden", action="store_true",
                     help="skip starting-QB Madden OVR feature")
-    ap.add_argument("--no-starters", action="store_true",
-                    help="skip starting-unit (OL/DL/secondary) OVR features")
+    ap.add_argument("--with-starters", action="store_true",
+                    help="include starting-unit (OL/DL/secondary) OVR features. "
+                         "OFF by default: once the snap-count leak was fixed they "
+                         "washed out on walk-forward and were dropped from the "
+                         "live model (see validate_starters.py). Flag reproduces "
+                         "the old comparison.")
     ap.add_argument("--no-coaching", action="store_true",
                     help="skip coaching (career win%% + new-regime) features")
     ap.add_argument("--no-qb-epa", action="store_true",
@@ -148,7 +152,10 @@ def main() -> None:
         print(f"  {len(qb_table)} game-team QBs, {rated} with a rating")
 
     starter_table = None
-    if not args.no_starters:
+    if args.with_starters:
+        # Dropped from the live model: leak-free, the starter-unit talent washes
+        # out (validate_starters.py). Kept behind an opt-in flag so the old
+        # "+ QB + Starters" comparisons below can still be reproduced.
         print("Loading starting-unit (OL/DL/secondary) Madden OVR ...")
         starter_table = starters_mod.starter_unit_ovr(seasons)
         print(f"  {len(starter_table)} game-team starting-unit rows")

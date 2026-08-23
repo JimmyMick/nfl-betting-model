@@ -107,12 +107,26 @@ leak-free `shift(1)` window as recent form before use.
   identified from in-game data, the rating value carries no in-game outcome
   (and starters are announced ~90 min pre-kickoff — realistic, not leakage).
 
-### 2e. Madden starting-unit ratings (`starters.py`)
-From nflverse **snap counts** (who actually played, and how much) joined to
-Madden by `pfr_id`. "Starters" = season players above a **50% snap-share**
-threshold. Aggregated into per-unit average OVR:
-- `ol_ovr` (C/G/T), `dl_ovr` (DE/DT/NT), `db_ovr` (CB/FS/SS), and `starter_ovr`
-  (all starters, both sides). Snap counts begin in 2012; earlier seasons get NaN.
+### 2e. Madden starting-unit ratings (`starters.py`) — DROPPED from the live model
+From nflverse **snap counts** (who has been playing, and how much) joined to
+Madden by `pfr_id`. "Starters" = players above a **50% snap-share** threshold,
+aggregated into per-unit average OVR: `ol_ovr` (C/G/T), `dl_ovr` (DE/DT/NT),
+`db_ovr` (CB/FS/SS), and `starter_ovr` (all, both sides). Snap counts begin in
+2012; earlier seasons get NaN.
+
+> **Leak fix + drop (2026).** The original code defined "starter" from a player's
+> snap share *in the same game* — post-kickoff knowledge of who actually played
+> the game being predicted (mid-game injuries, blowout benchings, late scratches).
+> `starter_unit_ovr` now decides starter status from each player's **prior-game**
+> snap share only (an expanding mean, shifted so the current game contributes
+> nothing — strictly pre-game). Re-validated leak-free on walk-forward
+> (`validate_starters.py`), the features **washed out** (2/5 held-out seasons on
+> logloss/Brier, below the majority bar) and even leaned slightly negative in
+> recent seasons. An A/B against the leaky version (`validate_starters_ab.py`)
+> showed the leak had been fabricating ~0.007 logloss/season of phantom lift and
+> flipping the verdict from 4/5 to 2/5. **Removed from the live model**
+> (`predict.py`); the module stays for the roster tab, diagnostics, and
+> reproducing the finding (`main.py --with-starters`). See §2h.
 
 ### 2f. Starter availability (`availability.py`)
 The one signal orthogonal to team strength: Elo/EPA rate a team's baseline
@@ -130,7 +144,8 @@ exactly the pre-game info a bettor holds.
 > Questionable at a *low* weight is a genuine, if modest, upgrade — the second
 > signal ever to clear the bar after availability itself. Isolation (Elo+EPA):
 > logloss **5/5** seasons, Brier 4/5 at w=0.15. Full (+QB+Starters, the live
-> config): logloss 3/5, Brier 4/5, **AUC 5/5** — the QB/starter features absorb
+> config *at the time* — starters have since been dropped, see §2e): logloss 3/5,
+> Brier 4/5, **AUC 5/5** — the QB/starter features absorb
 > some of the calibration gain but it still nets positive, and ranking improves
 > every season. Crucially the improvement **degrades monotonically** as the
 > weight rises (0.10/0.15 best → 0.55 worst): most Questionable players suit up,
@@ -152,6 +167,11 @@ through-line: the moneyline market already prices everything *knowable in
 advance*, so only a signal orthogonal to team strength (availability — who is
 literally not suited up) has ever added value.
 
+- **Starting-unit Madden talent** (`starters.py`): OL/DL/secondary/overall OVR —
+  **null once leak-free.** Shipped early (pre-discipline) and appeared to help,
+  but that lift was a snap-count data leak (§2e). Fixed to a prior-game
+  definition and re-validated, it washes out (2/5 seasons) — team Elo/EPA already
+  price roster talent. **Removed from the live model 2026.**
 - **PFF grades** — rejected pre-build: paywalled with no free mirror, and
   retrospective per-game grades would need rolling like EPA (leak risk), not
   fixing like preseason Madden OVR.

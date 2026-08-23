@@ -25,18 +25,20 @@ import pandas as pd
 
 from nfl_betting_model import (
     availability as avail_mod, data, epa as epa_mod, model, qb as qb_mod,
-    starters as starters_mod,
 )
 from nfl_betting_model.elo import compute_elo
 from nfl_betting_model.features import build_features, market_home_prob
 
 # Interpretable diffs (home minus away) used to name a "key driver" per game.
 # Each is signed so positive favours the home team.
+# NOTE: starter-unit Madden talent (ol/dl/db/starter_ovr_diff) was dropped from
+# the live model — once its data leak was fixed it washed out on walk-forward
+# (see validate_starters.py / validate_starters_ab.py), so it is no longer a
+# driver either.
 DRIVER_FEATURES = {
     "qb_ovr_diff": "QB rating",
     "net_epa_diff": "net EPA/play",
     "elo_diff": "Elo",
-    "starter_ovr_diff": "roster talent",
     "form_margin_diff": "recent margin",
     # Sign-flipped from out_avail_diff so positive favours the home team (i.e.
     # the away side has more talent ruled out). Built in predict_week.
@@ -153,15 +155,10 @@ def _prepare_frame(season: int, train_start: int,
     pbp_seasons = [s for s in seasons if s in played_seasons]
     epa_table = epa_mod.team_game_epa(pbp_seasons)
     qb_table = qb_mod.starting_qb_ovr(pbp_seasons)
-    starter_table = starters_mod.starter_unit_ovr(pbp_seasons)
 
     if carry_week is not None:
         target_games = games[(games["season"] == season) & (games["week"] == carry_week)]
         qb_table = _carry_forward(qb_table, ["qb_ovr"], games, target_games)
-        starter_table = _carry_forward(
-            starter_table, ["ol_ovr", "dl_ovr", "db_ovr", "starter_ovr"],
-            games, target_games,
-        )
 
     # Availability comes from the injury report, which is published pre-game for
     # upcoming weeks too — so it needs no carry-forward. Not-yet-reported weeks
@@ -170,7 +167,7 @@ def _prepare_frame(season: int, train_start: int,
 
     return build_features(
         games, epa_table=epa_table, elo_table=elo_table,
-        qb_table=qb_table, starter_table=starter_table, avail_table=avail_table,
+        qb_table=qb_table, avail_table=avail_table,
     )
 
 
