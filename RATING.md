@@ -357,6 +357,30 @@ viewed through a confidence filter rather than ROI. Surfaced live as the **top
 pick / top-3 record** on the season tracker ([§8b](#8b-grading--season-tracker-gradepy)),
 not as a betting recommendation.
 
+### 7f. Disagreement flat-betting experiments (`backtest_disagreement.py`, `backtest_crossover.py`)
+Two flat-stake experiments that bet the model's side of a model-vs-market
+disagreement, both judged by a **season-block bootstrap** (resample whole
+seasons — the honest test that respects within-season correlation; a bet-level
+bootstrap flatters any strategy carried by one hot year).
+
+- **Top-1 biggest edge/week** (`backtest_disagreement.py --topn 1`): bet the
+  single largest |edge| game each week. **Cleared the bar** — 2016–2025 season-
+  block 95% CI ≈ [+4%, +43%], P(ROI>0) ≈ 99%, 8/10 seasons positive. This is the
+  only moneyline strategy to survive the honest test; it is forward-tracked (not
+  trusted) as the **paper play** (`paper.py`) so 2026+ is a clean out-of-sample
+  scoreboard.
+
+- **Pick crossover** (`backtest_crossover.py`): bet the model's side only when the
+  model and market pick *different winners* (the model likes the market's dog to
+  win outright). Raw (2019–2025): 287 bets, +8.2% ROI — but **entirely carried by
+  2021** (ex-2021 ≈ −0.6%, dead). A post-hoc min-gap filter (model ≥55% & market
+  <45% on the model's team) looked better (71 bets, 56% win, +37% ROI, +14% ex-2021)
+  but **did NOT clear the bar**: season-block 95% CI **[−3.5%, +75%]** straddles
+  zero (P(ROI>0) 96.2%). Bet-level cleared ([+9.9%, +66%]) but that ignores the
+  2021 dependence. Verdict: **suggestive, not proven** — fails the gate top-1
+  passed, leans on one season, and the threshold was chosen post-hoc (which the
+  bootstrap doesn't penalise). Documented and **not tracked live.**
+
 ---
 
 ## 8. Reporting & inference surfaces
