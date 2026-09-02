@@ -239,7 +239,12 @@ def main() -> None:
         from nfl_betting_model import cloud
         out_dir = Path(args.export_dir) if args.export_dir else cloud.ARTIFACT_DIR
         cloud.write_grade_artifacts(s, scored, season, week, out_dir)
-        print(f"Exported cloud artifacts to {out_dir}")
+        # Refresh the full-season schedule artifact with the latest scores. A
+        # schedule-only fetch is light (no play-by-play/Madden/training).
+        from nfl_betting_model import data
+        cloud.write_schedule_artifacts(
+            data.load_games([season], include_unplayed=True), season, out_dir)
+        print(f"Exported cloud artifacts + schedule to {out_dir}")
 
 
 if __name__ == "__main__":

@@ -841,6 +841,55 @@ def render_paper() -> None:
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
+@st.cache_data(show_spinner="Loading schedule …")
+def _load_schedule(season: int) -> pd.DataFrame:
+    """Full-season schedule (matchups + scores) via a light schedule-only fetch."""
+    games = data.load_games([season], include_unplayed=True)
+    sched = games[games["season"] == season]
+    if "game_type" in sched.columns:
+        sched = sched[sched["game_type"].isin(["REG", "POST"])]
+    return sched.reset_index(drop=True)
+
+
+def render_schedule(season: int) -> None:
+    """Season matchup schedule, filterable by week (defaults to next unplayed)."""
+    sched = _load_schedule(season)
+    if sched.empty:
+        st.info(f"No schedule available for {season} yet.")
+        return
+
+    df = sched.copy()
+    df["week"] = pd.to_numeric(df["week"], errors="coerce").astype("Int64")
+    day = pd.to_datetime(df.get("gameday"), errors="coerce")
+    df["Date"] = day.dt.strftime("%a %b %d")
+    df["Matchup"] = df["away_team"].astype(str) + " @ " + df["home_team"].astype(str)
+    aw = pd.to_numeric(df.get("away_score"), errors="coerce")
+    hm = pd.to_numeric(df.get("home_score"), errors="coerce")
+    played = aw.notna() & hm.notna()
+
+    def _result(r) -> str:
+        a, h = aw.get(r.name), hm.get(r.name)
+        if pd.isna(a) or pd.isna(h):
+            return "—"
+        winner = r["home_team"] if h > a else r["away_team"] if a > h else "Tie"
+        return f"{r['away_team']} {int(a)}–{int(h)} {r['home_team']}  ✓ {winner}"
+
+    df["Result"] = df.apply(_result, axis=1)
+
+    weeks = sorted(int(w) for w in df["week"].dropna().unique())
+    upcoming = [w for w in weeks if not played[df["week"] == w].all()]
+    default_week = upcoming[0] if upcoming else (weeks[-1] if weeks else 1)
+    labels = ["All weeks"] + [f"Week {w}" for w in weeks]
+    default_label = f"Week {default_week}" if default_week in weeks else "All weeks"
+    choice = st.selectbox("Week", labels, index=labels.index(default_label),
+                          key="sched_week")
+
+    view = df if choice == "All weeks" else df[df["week"] == int(choice.split()[1])]
+    show = view[["week", "Date", "Matchup", "Result"]].rename(columns={"week": "Wk"})
+    st.dataframe(show, width="stretch", hide_index=True)
+    st.caption(f"{len(view)} games · {int(played[view.index].sum())} played.")
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -855,10 +904,15 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-(preview_tab, ask_tab, makepicks_tab, ai_tab, paper_tab, tracker_tab,
- pickem_tab, roster_tab) = st.tabs(
-    ["Weekly preview", "Ask the model", "Make picks", "AI expert",
-     "📈 Paper play", "Season tracker", "Pick'em leaderboard", "Team roster"])
+(schedule_tab, preview_tab, ask_tab, makepicks_tab, ai_tab, paper_tab,
+ tracker_tab, pickem_tab, roster_tab) = st.tabs(
+    ["🗓️ Schedule", "Weekly preview", "Ask the model", "Make picks",
+     "AI expert", "📈 Paper play", "Season tracker", "Pick'em leaderboard",
+     "Team roster"])
+
+with schedule_tab:
+    st.title(f"Schedule — {season}")
+    render_schedule(int(season))
 
 with preview_tab:
     st.title(f"Preview — {season}")

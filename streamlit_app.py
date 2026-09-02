@@ -296,6 +296,55 @@ def render_preview(preview: pd.DataFrame) -> None:
                "signal (moneyline is efficient).")
 
 
+def _schedule_rows(sched: pd.DataFrame) -> pd.DataFrame:
+    """Shape a raw schedule frame into a display table (Date / Matchup / Result)."""
+    df = sched.copy()
+    df["week"] = pd.to_numeric(df["week"], errors="coerce").astype("Int64")
+    day = pd.to_datetime(df.get("gameday"), errors="coerce")
+    df["Date"] = day.dt.strftime("%a %b %d")
+    df["Matchup"] = df["away_team"].astype(str) + " @ " + df["home_team"].astype(str)
+
+    aw = pd.to_numeric(df.get("away_score"), errors="coerce")
+    hm = pd.to_numeric(df.get("home_score"), errors="coerce")
+
+    def _result(r) -> str:
+        a, h = aw.get(r.name), hm.get(r.name)
+        if pd.isna(a) or pd.isna(h):
+            return "—"
+        winner = r["home_team"] if h > a else r["away_team"] if a > h else "Tie"
+        return f"{r['away_team']} {int(a)}–{int(h)} {r['home_team']}  ✓ {winner}"
+
+    df["Result"] = df.apply(_result, axis=1)
+    played = aw.notna() & hm.notna()
+    return df, played
+
+
+def render_schedule(sched: pd.DataFrame | None, season) -> None:
+    """Full-season matchup schedule, filterable by week (defaults to the next
+    unplayed week)."""
+    st.subheader(f"{season} schedule" if season else "Schedule")
+    if sched is None or sched.empty:
+        st.info("Schedule hasn't been published yet.")
+        return
+
+    df, played = _schedule_rows(sched)
+    weeks = sorted(int(w) for w in df["week"].dropna().unique())
+    upcoming = [w for w in weeks if not played[df["week"] == w].all()]
+    default_week = upcoming[0] if upcoming else (weeks[-1] if weeks else 1)
+
+    labels = ["All weeks"] + [f"Week {w}" for w in weeks]
+    default_label = f"Week {default_week}" if default_week in weeks else "All weeks"
+    choice = st.selectbox("Week", labels, index=labels.index(default_label))
+
+    view = df if choice == "All weeks" else df[df["week"] == int(choice.split()[1])]
+    show = view[["week", "Date", "Matchup", "Result"]].rename(
+        columns={"week": "Wk"})
+    st.dataframe(show, width="stretch", hide_index=True)
+    n_played = int(played[view.index].sum())
+    st.caption(f"{len(view)} games · {n_played} played · "
+               "results fill in as the weekly runs refresh.")
+
+
 def render_paper(ledger: pd.DataFrame) -> None:
     """The out-of-sample paper-trade tracker for the single biggest disagreement.
 
@@ -551,9 +600,10 @@ st.title("🏈 NFL model — pick'em & tracker")
 art = cloud.load_artifacts()
 graded, scored, preview, meta = (
     art["graded"], art["scored"], art["preview"], art["meta"])
+schedule = art["schedule"]
 paper_ledger = paper_mod.load_ledger()
 
-if graded is None and preview is None:
+if graded is None and preview is None and schedule is None:
     st.warning("No data published yet. The local weekly runs export results here "
                "(`predictions/cloud/`) and push them; this app renders whatever's "
                "been published.")
@@ -567,11 +617,14 @@ if meta.get("grade_generated_at"):
 if meta.get("preview_generated_at"):
     stamps.append(f"preview Wk {meta.get('preview_week', '?')} "
                   f"({meta['preview_generated_at'][:10]})")
-season = meta.get("grade_season") or meta.get("preview_season") or ""
+season = (meta.get("grade_season") or meta.get("preview_season")
+          or meta.get("schedule_season") or "")
 if stamps:
     st.caption(f"**{season} season** · last updated: " + " · ".join(stamps))
 
 tabs, names = [], []
+if schedule is not None:
+    names.append("🗓️ Schedule")
 if scored is not None or graded is not None:
     names.append("Pick'em leaderboard")
 if preview is not None:
@@ -584,6 +637,10 @@ names.append("📈 Paper play")  # always shown; empty-state until the first pla
 names.append("📖 Guide")
 made = st.tabs(names)
 tab_by_name = dict(zip(names, made))
+
+if "🗓️ Schedule" in tab_by_name:
+    with tab_by_name["🗓️ Schedule"]:
+        render_schedule(schedule, meta.get("schedule_season") or season)
 
 if "Pick'em leaderboard" in tab_by_name:
     with tab_by_name["Pick'em leaderboard"]:

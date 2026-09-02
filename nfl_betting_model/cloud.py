@@ -24,6 +24,7 @@ ARTIFACT_DIR = Path(__file__).resolve().parent.parent / "predictions" / "cloud"
 GRADED_FILE = "graded_games.csv"
 SCORED_FILE = "scored_picks.csv"
 PREVIEW_FILE = "latest_preview.csv"
+SCHEDULE_FILE = "schedule.csv"
 META_FILE = "meta.json"
 
 # Columns each artifact carries — kept explicit so the cloud reader and the
@@ -40,6 +41,12 @@ SCORED_COLS = [
 PREVIEW_COLS = [
     "home_team", "away_team", "model_home_prob", "market_home_prob", "edge",
     "driver", "home_win",
+]
+# Full-season matchup schedule (dependency-light; no model output). Scores stay
+# blank for unplayed games and fill in as the weekly runs refresh the artifact.
+SCHEDULE_COLS = [
+    "week", "game_type", "gameday", "away_team", "home_team",
+    "away_score", "home_score",
 ]
 
 
@@ -93,6 +100,32 @@ def write_preview_artifacts(target: pd.DataFrame, season: int, week: int,
     return out_dir
 
 
+def write_schedule_artifacts(games: pd.DataFrame, season: int,
+                             out_dir: Path = ARTIFACT_DIR) -> Path:
+    """Export the full-season matchup schedule for the cloud dashboard.
+
+    ``games`` is any frame with the standard schedule columns (e.g. the frame
+    from ``data.load_games(..., include_unplayed=True)``); regular-season and
+    playoff games are kept, preseason dropped. Final scores are written when a
+    game has been played and left blank otherwise, so re-exporting each week
+    keeps results current without any model output.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sched = games[games["season"] == season].copy()
+    if "game_type" in sched.columns:
+        sched = sched[sched["game_type"].isin(["REG", "POST"])]
+    if "gameday" in sched.columns:
+        sched["gameday"] = pd.to_datetime(
+            sched["gameday"], errors="coerce").dt.strftime("%Y-%m-%d")
+    cols = [c for c in SCHEDULE_COLS if c in sched.columns]
+    sched = sched[cols].sort_values(
+        [c for c in ("week", "gameday") if c in cols])
+    sched.to_csv(out_dir / SCHEDULE_FILE, index=False)
+    _write_meta(out_dir, schedule_season=int(season),
+                schedule_generated_at=_now())
+    return out_dir
+
+
 def load_artifacts(art_dir: Path = ARTIFACT_DIR) -> dict:
     """Read whatever artifacts exist. Missing frames come back as ``None``."""
     def _maybe(name: str) -> pd.DataFrame | None:
@@ -106,5 +139,6 @@ def load_artifacts(art_dir: Path = ARTIFACT_DIR) -> dict:
         "graded": _maybe(GRADED_FILE),
         "scored": _maybe(SCORED_FILE),
         "preview": _maybe(PREVIEW_FILE),
+        "schedule": _maybe(SCHEDULE_FILE),
         "meta": _read_meta(art_dir),
     }

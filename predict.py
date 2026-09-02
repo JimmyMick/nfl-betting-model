@@ -312,7 +312,11 @@ def main() -> None:
         from nfl_betting_model import cloud
         out_dir = Path(args.export_dir) if args.export_dir else cloud.ARTIFACT_DIR
         cloud.write_preview_artifacts(target, season, week, out_dir)
-        print(f"Exported cloud preview artifact to {out_dir}")
+        # df already holds the full season (incl. unplayed games) from
+        # _prepare_frame, so refresh the schedule artifact for free — final
+        # scores fill in for games played so far.
+        cloud.write_schedule_artifacts(df, season, out_dir)
+        print(f"Exported cloud preview + schedule artifacts to {out_dir}")
 
 
 if __name__ == "__main__":
