@@ -46,15 +46,37 @@ DRIVER_FEATURES = {
 }
 
 
+def _primary_value(hist_team: pd.DataFrame, col: str):
+    """The team's *primary* starter value for ``col`` — the OVR that started the
+    most games in its most recent prior season, tie-broken to the latest week.
+
+    Using the most-frequent value (not the chronologically last game) avoids the
+    Week-18 trap: playoff-bound teams rest starters in the finale, so the last
+    game's passer is a backup whose low OVR would otherwise be carried into the
+    opener (e.g. KC's Wk1 QB reading as a 55-OVR practice-squad arm instead of
+    Mahomes). Restricting to the most recent season also avoids mixing a QB's
+    OVR across seasons.
+    """
+    s = hist_team[["season", "week", col]].dropna(subset=[col])
+    if s.empty:
+        return None
+    s = s[s["season"] == s["season"].max()]              # most recent prior season
+    agg = s.groupby(col).agg(n=(col, "size"), last=("week", "max"))
+    agg = agg.sort_values(["n", "last"], ascending=False)  # most starts, then latest
+    return agg.index[0]
+
+
 def _carry_forward(table: pd.DataFrame, value_cols: list[str],
                    games: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing (target game, team) rows by carrying each team's most recent
-    prior-game values forward.
+    """Fill missing (target game, team) rows by carrying each team's *primary*
+    recent starter values forward.
 
     For a not-yet-played game there is no play-by-play, so qb/starter OVR has no
     row. The OVR is a season-fixed launch rating, so the best pre-game estimate
-    is the team's latest known starter(s). This is a no-op for games already in
-    the table, so historical weeks stay exactly as validated.
+    is the team's primary starter — the one who started the most games in its
+    most recent season (see ``_primary_value``), not merely whoever played last.
+    This is a no-op for games already in the table, so historical weeks stay
+    exactly as validated.
     """
     meta = games[["game_id", "season", "week"]]
     hist = table.merge(meta, on="game_id", how="left").sort_values(["season", "week"])
@@ -71,9 +93,10 @@ def _carry_forward(table: pd.DataFrame, value_cols: list[str],
             )].dropna(subset=value_cols, how="all")
             if h.empty:
                 continue
-            last = h.iloc[-1]
-            rows.append({"game_id": g["game_id"], "team": team,
-                         **{c: last[c] for c in value_cols}})
+            vals = {c: _primary_value(h, c) for c in value_cols}
+            vals = {c: v for c, v in vals.items() if v is not None}
+            if vals:
+                rows.append({"game_id": g["game_id"], "team": team, **vals})
     if rows:
         table = pd.concat([table, pd.DataFrame(rows)], ignore_index=True)
     return table
