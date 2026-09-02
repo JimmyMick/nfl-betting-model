@@ -25,6 +25,8 @@ GRADED_FILE = "graded_games.csv"
 SCORED_FILE = "scored_picks.csv"
 PREVIEW_FILE = "latest_preview.csv"
 SCHEDULE_FILE = "schedule.csv"
+SIM_FILE = "playoff_odds.csv"
+SIM_HISTORY_FILE = "playoff_odds_history.csv"
 META_FILE = "meta.json"
 
 # Columns each artifact carries — kept explicit so the cloud reader and the
@@ -126,6 +128,42 @@ def write_schedule_artifacts(games: pd.DataFrame, season: int,
     return out_dir
 
 
+SIM_COLS = [
+    "team", "conference", "division", "wins_now", "games_played", "proj_wins",
+    "make_playoffs", "win_division", "top_seed", "win_conference", "win_sb",
+]
+
+
+def write_sim_artifacts(proj: pd.DataFrame, season: int, through_week: int,
+                        out_dir: Path = ARTIFACT_DIR) -> Path:
+    """Export the latest playoff-odds projection plus an appended weekly history.
+
+    The current snapshot (``playoff_odds.csv``) is overwritten each run. A
+    ``through_week``-stamped copy is appended to ``playoff_odds_history.csv`` so a
+    team's odds can be tracked week to week; re-running the same week replaces
+    that week's rows (idempotent).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cols = [c for c in SIM_COLS if c in proj.columns]
+    snap = proj[cols].copy()
+    snap.to_csv(out_dir / SIM_FILE, index=False)
+
+    stamped = snap.copy()
+    stamped.insert(0, "through_week", int(through_week))
+    stamped.insert(0, "season", int(season))
+    hist_path = out_dir / SIM_HISTORY_FILE
+    if hist_path.exists():
+        prev = pd.read_csv(hist_path)
+        prev = prev[~((prev["season"] == season)
+                      & (prev["through_week"] == through_week))]
+        stamped = pd.concat([prev, stamped], ignore_index=True)
+    stamped.to_csv(hist_path, index=False)
+
+    _write_meta(out_dir, sim_season=int(season), sim_through_week=int(through_week),
+                sim_generated_at=_now())
+    return out_dir
+
+
 def load_artifacts(art_dir: Path = ARTIFACT_DIR) -> dict:
     """Read whatever artifacts exist. Missing frames come back as ``None``."""
     def _maybe(name: str) -> pd.DataFrame | None:
@@ -140,5 +178,7 @@ def load_artifacts(art_dir: Path = ARTIFACT_DIR) -> dict:
         "scored": _maybe(SCORED_FILE),
         "preview": _maybe(PREVIEW_FILE),
         "schedule": _maybe(SCHEDULE_FILE),
+        "sim": _maybe(SIM_FILE),
+        "sim_history": _maybe(SIM_HISTORY_FILE),
         "meta": _read_meta(art_dir),
     }

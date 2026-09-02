@@ -345,6 +345,59 @@ def render_schedule(sched: pd.DataFrame | None, season) -> None:
                "results fill in as the weekly runs refresh.")
 
 
+def render_playoff_odds(sim, sim_history, meta, season) -> None:
+    """Monte Carlo playoff-odds projection + week-to-week trend."""
+    through = meta.get("sim_through_week")
+    when = "preseason" if through in (0, None) else f"through Week {int(through)}"
+    st.subheader(f"Playoff odds — {season} ({when})")
+    if sim is None or sim.empty:
+        st.info("No simulation published yet.")
+        return
+
+    df = sim.sort_values("win_sb", ascending=False).reset_index(drop=True)
+    pct = ["make_playoffs", "win_division", "top_seed", "win_conference", "win_sb"]
+    show = pd.DataFrame({
+        "Team": df["team"], "Conf": df["conference"],
+        "Proj W": df["proj_wins"].map(lambda x: f"{x:.1f}"),
+        "Playoffs": df["make_playoffs"].map(lambda x: f"{x:.0%}"),
+        "Division": df["win_division"].map(lambda x: f"{x:.0%}"),
+        "#1 Seed": df["top_seed"].map(lambda x: f"{x:.0%}"),
+        "Conf": df["win_conference"].map(lambda x: f"{x:.0%}"),
+        "Super Bowl": df["win_sb"].map(lambda x: f"{x:.0%}"),
+    })
+    st.dataframe(show, width="stretch", hide_index=True)
+
+    top = df.head(12)
+    chart = alt.Chart(top).mark_bar().encode(
+        x=alt.X("win_sb:Q", title="Super Bowl odds", axis=alt.Axis(format="%")),
+        y=alt.Y("team:N", sort="-x", title=None),
+        color=alt.Color("conference:N", legend=None),
+        tooltip=["team", alt.Tooltip("win_sb:Q", format=".1%")],
+    ).properties(height=320)
+    st.altair_chart(chart, use_container_width=True)
+
+    # Week-to-week trend once more than one snapshot exists.
+    if sim_history is not None and not sim_history.empty:
+        hist = sim_history[sim_history["season"] == season]
+        if hist["through_week"].nunique() > 1:
+            st.subheader("Week-to-week trend")
+            team = st.selectbox("Team", sorted(hist["team"].unique()))
+            th = hist[hist["team"] == team]
+            melt = th.melt(id_vars="through_week",
+                           value_vars=["make_playoffs", "win_sb"],
+                           var_name="metric", value_name="prob")
+            line = alt.Chart(melt).mark_line(point=True).encode(
+                x=alt.X("through_week:Q", title="through week"),
+                y=alt.Y("prob:Q", axis=alt.Axis(format="%")),
+                color="metric:N",
+            ).properties(height=260)
+            st.altair_chart(line, use_container_width=True)
+
+    st.caption("Monte Carlo of the rest of the season using the model. Ratings "
+               "held fixed across each sim; playoff games use current Elo + "
+               "home field. **Just for fun — not a betting product.**")
+
+
 def render_paper(ledger: pd.DataFrame) -> None:
     """The out-of-sample paper-trade tracker for the single biggest disagreement.
 
@@ -601,9 +654,11 @@ art = cloud.load_artifacts()
 graded, scored, preview, meta = (
     art["graded"], art["scored"], art["preview"], art["meta"])
 schedule = art["schedule"]
+sim = art["sim"]
+sim_history = art["sim_history"]
 paper_ledger = paper_mod.load_ledger()
 
-if graded is None and preview is None and schedule is None:
+if graded is None and preview is None and schedule is None and sim is None:
     st.warning("No data published yet. The local weekly runs export results here "
                "(`predictions/cloud/`) and push them; this app renders whatever's "
                "been published.")
@@ -618,13 +673,15 @@ if meta.get("preview_generated_at"):
     stamps.append(f"preview Wk {meta.get('preview_week', '?')} "
                   f"({meta['preview_generated_at'][:10]})")
 season = (meta.get("grade_season") or meta.get("preview_season")
-          or meta.get("schedule_season") or "")
+          or meta.get("schedule_season") or meta.get("sim_season") or "")
 if stamps:
     st.caption(f"**{season} season** · last updated: " + " · ".join(stamps))
 
 tabs, names = [], []
 if schedule is not None:
     names.append("🗓️ Schedule")
+if sim is not None:
+    names.append("🏆 Playoff odds")
 if scored is not None or graded is not None:
     names.append("Pick'em leaderboard")
 if preview is not None:
@@ -641,6 +698,10 @@ tab_by_name = dict(zip(names, made))
 if "🗓️ Schedule" in tab_by_name:
     with tab_by_name["🗓️ Schedule"]:
         render_schedule(schedule, meta.get("schedule_season") or season)
+
+if "🏆 Playoff odds" in tab_by_name:
+    with tab_by_name["🏆 Playoff odds"]:
+        render_playoff_odds(sim, sim_history, meta, meta.get("sim_season") or season)
 
 if "Pick'em leaderboard" in tab_by_name:
     with tab_by_name["Pick'em leaderboard"]:

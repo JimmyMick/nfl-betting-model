@@ -890,6 +890,53 @@ def render_schedule(season: int) -> None:
     st.caption(f"{len(view)} games · {int(played[view.index].sum())} played.")
 
 
+@st.cache_data(show_spinner="Simulating the rest of the season …")
+def _simulate(season: int, sims: int) -> pd.DataFrame:
+    from nfl_betting_model import simulate as sim_mod
+    return sim_mod.simulate(season, n=sims)
+
+
+def render_playoff_odds(season: int) -> None:
+    """Monte Carlo playoff odds — reads the committed snapshot, or runs live."""
+    from nfl_betting_model import cloud as cloud_mod
+    c1, c2 = st.columns([1, 3])
+    sims = c1.selectbox("Simulations", [5000, 10000, 20000], index=1, key="n_sims")
+    run = c2.button("🎲 Run fresh simulation (~2–3 min)", key="run_sim")
+
+    if run:
+        st.session_state["sim_proj"] = _simulate(int(season), int(sims))
+    proj = st.session_state.get("sim_proj")
+    source = "fresh simulation"
+    if proj is None:
+        snap = cloud_mod.load_artifacts().get("sim")
+        if snap is None or snap.empty:
+            st.info("No saved simulation yet. Click **Run fresh simulation** "
+                    "to generate this season's playoff odds.")
+            return
+        proj, source = snap, "last saved snapshot"
+
+    df = proj.sort_values("win_sb", ascending=False).reset_index(drop=True)
+    st.caption(f"Source: {source}. Monte Carlo of the rest of the season — "
+               "just for fun, not a betting product.")
+    show = pd.DataFrame({
+        "Team": df["team"], "Conf": df["conference"],
+        "Proj W": df["proj_wins"].map(lambda x: f"{x:.1f}"),
+        "Playoffs": df["make_playoffs"].map(lambda x: f"{x:.0%}"),
+        "Division": df["win_division"].map(lambda x: f"{x:.0%}"),
+        "#1 Seed": df["top_seed"].map(lambda x: f"{x:.0%}"),
+        "Conf": df["win_conference"].map(lambda x: f"{x:.0%}"),
+        "Super Bowl": df["win_sb"].map(lambda x: f"{x:.0%}"),
+    })
+    st.dataframe(show, width="stretch", hide_index=True)
+    top = df.head(12)
+    st.altair_chart(alt.Chart(top).mark_bar().encode(
+        x=alt.X("win_sb:Q", title="Super Bowl odds", axis=alt.Axis(format="%")),
+        y=alt.Y("team:N", sort="-x", title=None),
+        color=alt.Color("conference:N", legend=None),
+        tooltip=["team", alt.Tooltip("win_sb:Q", format=".1%")],
+    ).properties(height=320), use_container_width=True)
+
+
 # ── Sidebar (shared controls) ─────────────────────────────────────────────────
 st.sidebar.title("🏈 NFL model")
 season = st.sidebar.selectbox("Season", list(range(CURRENT_SEASON, 2009, -1)), index=0)
@@ -904,15 +951,19 @@ st.sidebar.caption(
     "target and applied to strictly pre-game features. No picks, no EV claims."
 )
 
-(schedule_tab, preview_tab, ask_tab, makepicks_tab, ai_tab, paper_tab,
+(schedule_tab, odds_tab, preview_tab, ask_tab, makepicks_tab, ai_tab, paper_tab,
  tracker_tab, pickem_tab, roster_tab) = st.tabs(
-    ["🗓️ Schedule", "Weekly preview", "Ask the model", "Make picks",
-     "AI expert", "📈 Paper play", "Season tracker", "Pick'em leaderboard",
-     "Team roster"])
+    ["🗓️ Schedule", "🏆 Playoff odds", "Weekly preview", "Ask the model",
+     "Make picks", "AI expert", "📈 Paper play", "Season tracker",
+     "Pick'em leaderboard", "Team roster"])
 
 with schedule_tab:
     st.title(f"Schedule — {season}")
     render_schedule(int(season))
+
+with odds_tab:
+    st.title(f"Playoff odds — {season}")
+    render_playoff_odds(int(season))
 
 with preview_tab:
     st.title(f"Preview — {season}")
