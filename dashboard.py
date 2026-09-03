@@ -26,10 +26,31 @@ from predict import predict_week, _prob_str, edge_label, EDGE_ZERO
 from grade import grade_season, weekly_summary, _calibration, _record
 from nfl_betting_model import (
     data, picks as picks_mod, submit as submit_mod, llm_picker as llm_mod,
-    chat as chat_mod, paper as paper_mod)
+    chat as chat_mod, paper as paper_mod, teams as teams_mod)
 from nfl_betting_model.roster import team_roster
 
 st.set_page_config(page_title="NFL model", page_icon="🏈", layout="wide")
+
+
+# ── Team-logo helpers (small helmet icons next to abbreviations) ───────────────
+def _logo_col(label: str = "") -> "st.column_config.ImageColumn":
+    return st.column_config.ImageColumn(label, width="small")
+
+
+def team_logos(abbrs) -> "list":
+    return pd.Series(abbrs).map(teams_mod.logo).values
+
+
+def matchup_frame(away, home) -> dict:
+    return {"": team_logos(away), "Away": list(away),
+            " ": team_logos(home), "Home": list(home)}
+
+
+def logo_cfg(*keys) -> dict:
+    return {k: _logo_col() for k in keys}
+
+
+MATCHUP_CFG = logo_cfg("", " ")
 
 CURRENT_SEASON = 2026
 
@@ -112,7 +133,8 @@ def _screen_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
         m_team = r["home_team"] if r["model_home_prob"] >= 0.5 else r["away_team"]
         k_team = r["home_team"] if r["market_home_prob"] >= 0.5 else r["away_team"]
         row = {
-            "Matchup": f"{r['away_team']} @ {r['home_team']}",
+            "": teams_mod.logo(r["away_team"]), "Away": r["away_team"],
+            " ": teams_mod.logo(r["home_team"]), "Home": r["home_team"],
             "Model": m_team,
             "Model %": max(r["model_home_prob"], 1 - r["model_home_prob"]) * 100,
             "Market": k_team,
@@ -134,6 +156,8 @@ def _screen_table(df: pd.DataFrame, graded: bool) -> pd.DataFrame:
 
 
 _SCREEN_COLCFG = {
+    "": st.column_config.ImageColumn("", width="small"),
+    " ": st.column_config.ImageColumn("", width="small"),
     "Model": st.column_config.TextColumn(
         "Model", help="Team the model favours."),
     "Model %": st.column_config.NumberColumn(
@@ -346,9 +370,10 @@ def render_tracker(season: int, through_week: int, train_start: int, kind: str) 
         r = grp.loc[grp["_conf"].idxmax()]
         top_rows.append({
             "Week": str(int(wk_no)),
-            "Matchup": f"{r['away_team']} @ {r['home_team']}",
-            "Top pick": r["model_pick"],
+            **matchup_frame([r["away_team"]], [r["home_team"]]),
+            "  ": teams_mod.logo(r["model_pick"]), "Top pick": r["model_pick"],
             "Confidence": f"{r['_conf']:.0%}",
+            "   ": teams_mod.logo(r["winner"]) if pd.notna(r["winner"]) else None,
             "Actual": r["winner"],
             "Result": "✓" if r["model_correct"] else "✗",
         })
@@ -360,7 +385,8 @@ def render_tracker(season: int, through_week: int, train_start: int, kind: str) 
     t1, t3 = st.columns(2)
     t1.metric("Top pick record", _record(top["Result"] == "✓"))
     t3.metric("Top-3 picks record", _record(top3["model_correct"]))
-    st.dataframe(top, width="stretch", hide_index=True)
+    st.dataframe(top, width="stretch", hide_index=True,
+                 column_config=logo_cfg("", " ", "  ", "   "))
     st.caption("Each week's single highest-confidence model pick vs. the actual "
                "result — the model's “lock of the week.” The Top-3 record pools "
                "the three most-confident games each week.")
@@ -832,13 +858,15 @@ def render_paper() -> None:
             wi = "—"
         rows.append({
             "Week": int(r["week"]),
+            "": teams_mod.logo(r["model_side"]),
             "Play": f"{r['model_side']} ({r['away_team']} @ {r['home_team']})",
             "Edge": f"+{abs(float(r['edge'])):.0%}" if pd.notna(r["edge"]) else "—",
             "Price": price,
             "Result": res,
             "What-if": wi,
         })
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
+                 column_config=logo_cfg(""))
 
 
 @st.cache_data(show_spinner="Loading schedule …")
@@ -885,8 +913,12 @@ def render_schedule(season: int) -> None:
                           key="sched_week")
 
     view = df if choice == "All weeks" else df[df["week"] == int(choice.split()[1])]
-    show = view[["week", "Date", "Matchup", "Result"]].rename(columns={"week": "Wk"})
-    st.dataframe(show, width="stretch", hide_index=True)
+    show = pd.DataFrame({
+        "Wk": view["week"].values, "Date": view["Date"].values,
+        **matchup_frame(view["away_team"], view["home_team"]),
+        "Result": view["Result"].values,
+    })
+    st.dataframe(show, width="stretch", hide_index=True, column_config=MATCHUP_CFG)
     st.caption(f"{len(view)} games · {int(played[view.index].sum())} played.")
 
 
@@ -919,15 +951,17 @@ def render_playoff_odds(season: int) -> None:
     st.caption(f"Source: {source}. Monte Carlo of the rest of the season — "
                "just for fun, not a betting product.")
     show = pd.DataFrame({
-        "Team": df["team"], "Conf": df["conference"],
-        "Proj W": df["proj_wins"].map(lambda x: f"{x:.1f}"),
-        "Playoffs": df["make_playoffs"].map(lambda x: f"{x:.0%}"),
-        "Division": df["win_division"].map(lambda x: f"{x:.0%}"),
-        "#1 Seed": df["top_seed"].map(lambda x: f"{x:.0%}"),
-        "Conf": df["win_conference"].map(lambda x: f"{x:.0%}"),
-        "Super Bowl": df["win_sb"].map(lambda x: f"{x:.0%}"),
+        "": team_logos(df["team"]),
+        "Team": df["team"].values, "Conf": df["conference"].values,
+        "Proj W": df["proj_wins"].map(lambda x: f"{x:.1f}").values,
+        "Playoffs": df["make_playoffs"].map(lambda x: f"{x:.0%}").values,
+        "Division": df["win_division"].map(lambda x: f"{x:.0%}").values,
+        "#1 Seed": df["top_seed"].map(lambda x: f"{x:.0%}").values,
+        "Conf ": df["win_conference"].map(lambda x: f"{x:.0%}").values,
+        "Super Bowl": df["win_sb"].map(lambda x: f"{x:.0%}").values,
     })
-    st.dataframe(show, width="stretch", hide_index=True)
+    st.dataframe(show, width="stretch", hide_index=True,
+                 column_config={"": _logo_col()})
     top = df.head(12)
     st.altair_chart(alt.Chart(top).mark_bar().encode(
         x=alt.X("win_sb:Q", title="Super Bowl odds", axis=alt.Axis(format="%")),

@@ -23,10 +23,35 @@ import streamlit as st
 from sklearn.metrics import brier_score_loss, log_loss
 
 from nfl_betting_model import (
-    cloud, paper as paper_mod, picks as picks_mod, submit as submit_mod)
+    cloud, paper as paper_mod, picks as picks_mod, submit as submit_mod,
+    teams as teams_mod)
 
 st.set_page_config(page_title="NFL model — leaderboard", page_icon="🏈",
                    layout="wide")
+
+
+# ── Team-logo helpers (small helmet icons next to abbreviations) ───────────────
+def _logo_col(label: str = "") -> "st.column_config.ImageColumn":
+    return st.column_config.ImageColumn(label, width="small")
+
+
+def team_logos(abbrs) -> pd.Series:
+    """Map a series/list of team abbreviations to their logo URLs."""
+    return pd.Series(abbrs).map(teams_mod.logo).values
+
+
+def matchup_frame(away, home) -> dict:
+    """Columns for an ``away @ home`` row: away logo/abbr then home logo/abbr."""
+    return {"": team_logos(away), "Away": list(away),
+            " ": team_logos(home), "Home": list(home)}
+
+
+def logo_cfg(*keys) -> dict:
+    """column_config mapping each (whitespace) key to a small logo image column."""
+    return {k: _logo_col() for k in keys}
+
+
+MATCHUP_CFG = logo_cfg("", " ")
 
 
 # ── Optional Descope (OIDC) sign-in gate ──────────────────────────────────────
@@ -104,9 +129,10 @@ def _top_picks(g: pd.DataFrame) -> pd.DataFrame:
         r = grp.loc[grp["_conf"].idxmax()]
         rows.append({
             "Week": str(int(wk)),
-            "Matchup": f"{r['away_team']} @ {r['home_team']}",
-            "Top pick": r["model_pick"],
+            **matchup_frame([r["away_team"]], [r["home_team"]]),
+            "  ": teams_mod.logo(r["model_pick"]), "Top pick": r["model_pick"],
             "Confidence": f"{r['_conf']:.0%}",
+            "   ": teams_mod.logo(r["winner"]) if pd.notna(r["winner"]) else None,
             "Actual": r["winner"],
             "Result": "✓" if r["model_correct"] else "✗",
         })
@@ -240,7 +266,8 @@ def render_tracker(graded: pd.DataFrame) -> None:
     t1, t3 = st.columns(2)
     t1.metric("Top pick record", _record(top["Result"] == "✓"))
     t3.metric("Top-3 picks record", _record(_topn_correct(graded, 3)))
-    st.dataframe(top, width="stretch", hide_index=True)
+    st.dataframe(top, width="stretch", hide_index=True,
+                 column_config=logo_cfg("", " ", "  ", "   "))
     st.caption("Each week's single highest-confidence model pick vs. the actual "
                "result — the model's “lock of the week.” The Top-3 record pools "
                "the three most-confident games each week.")
@@ -277,17 +304,19 @@ def render_preview(preview: pd.DataFrame) -> None:
 
     st.subheader("Slate")
     conf = df["model_home_prob"].apply(lambda p: max(p, 1 - p))
-    by_prob = df.reindex(conf.sort_values(ascending=False).index)
-    rows = []
-    for _, r in by_prob.iterrows():
-        rows.append({
-            "Matchup": f"{r['away_team']} @ {r['home_team']}",
-            "Model": _prob_str(r["home_team"], r["away_team"], r["model_home_prob"]),
-            "Market": _prob_str(r["home_team"], r["away_team"], r["market_home_prob"]),
-            "Edge": _edge_label(r["edge"], r["home_team"], r["away_team"]),
-            "Key driver": r["driver"],
-        })
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    bp = df.reindex(conf.sort_values(ascending=False).index).copy()
+    bp["Model"] = bp.apply(
+        lambda r: _prob_str(r["home_team"], r["away_team"], r["model_home_prob"]), axis=1)
+    bp["Market"] = bp.apply(
+        lambda r: _prob_str(r["home_team"], r["away_team"], r["market_home_prob"]), axis=1)
+    bp["Edge"] = bp.apply(
+        lambda r: _edge_label(r["edge"], r["home_team"], r["away_team"]), axis=1)
+    show = pd.DataFrame({
+        **matchup_frame(bp["away_team"], bp["home_team"]),
+        "Model": bp["Model"].values, "Market": bp["Market"].values,
+        "Edge": bp["Edge"].values, "Key driver": bp["driver"].values,
+    })
+    st.dataframe(show, width="stretch", hide_index=True, column_config=MATCHUP_CFG)
     st.caption("**Edge** = the side the model values *more than the market prices "
                "it* — a mispricing, not a winner pick. It can name the underdog "
                "even when the model still expects the favourite to win (it just "
@@ -337,9 +366,12 @@ def render_schedule(sched: pd.DataFrame | None, season) -> None:
     choice = st.selectbox("Week", labels, index=labels.index(default_label))
 
     view = df if choice == "All weeks" else df[df["week"] == int(choice.split()[1])]
-    show = view[["week", "Date", "Matchup", "Result"]].rename(
-        columns={"week": "Wk"})
-    st.dataframe(show, width="stretch", hide_index=True)
+    show = pd.DataFrame({
+        "Wk": view["week"].values, "Date": view["Date"].values,
+        **matchup_frame(view["away_team"], view["home_team"]),
+        "Result": view["Result"].values,
+    })
+    st.dataframe(show, width="stretch", hide_index=True, column_config=MATCHUP_CFG)
     n_played = int(played[view.index].sum())
     st.caption(f"{len(view)} games · {n_played} played · "
                "results fill in as the weekly runs refresh.")
@@ -355,17 +387,18 @@ def render_playoff_odds(sim, sim_history, meta, season) -> None:
         return
 
     df = sim.sort_values("win_sb", ascending=False).reset_index(drop=True)
-    pct = ["make_playoffs", "win_division", "top_seed", "win_conference", "win_sb"]
     show = pd.DataFrame({
-        "Team": df["team"], "Conf": df["conference"],
-        "Proj W": df["proj_wins"].map(lambda x: f"{x:.1f}"),
-        "Playoffs": df["make_playoffs"].map(lambda x: f"{x:.0%}"),
-        "Division": df["win_division"].map(lambda x: f"{x:.0%}"),
-        "#1 Seed": df["top_seed"].map(lambda x: f"{x:.0%}"),
-        "Conf": df["win_conference"].map(lambda x: f"{x:.0%}"),
-        "Super Bowl": df["win_sb"].map(lambda x: f"{x:.0%}"),
+        "": team_logos(df["team"]),
+        "Team": df["team"].values, "Conf": df["conference"].values,
+        "Proj W": df["proj_wins"].map(lambda x: f"{x:.1f}").values,
+        "Playoffs": df["make_playoffs"].map(lambda x: f"{x:.0%}").values,
+        "Division": df["win_division"].map(lambda x: f"{x:.0%}").values,
+        "#1 Seed": df["top_seed"].map(lambda x: f"{x:.0%}").values,
+        "Conf ": df["win_conference"].map(lambda x: f"{x:.0%}").values,
+        "Super Bowl": df["win_sb"].map(lambda x: f"{x:.0%}").values,
     })
-    st.dataframe(show, width="stretch", hide_index=True)
+    st.dataframe(show, width="stretch", hide_index=True,
+                 column_config={"": _logo_col()})
 
     top = df.head(12)
     chart = alt.Chart(top).mark_bar().encode(
@@ -473,13 +506,15 @@ def render_paper(ledger: pd.DataFrame) -> None:
             wi = "—"
         rows.append({
             "Week": int(r["week"]),
+            "": teams_mod.logo(r["model_side"]),
             "Play": f"{r['model_side']} ({r['away_team']} @ {r['home_team']})",
             "Edge": f"+{abs(float(r['edge'])):.0%}" if pd.notna(r["edge"]) else "—",
             "Price": price,
             "Result": res,
             "What-if": wi,
         })
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
+                 column_config=logo_cfg(""))
     st.caption("One bet per week, priced when the preview ran (Thursday). "
                "Backtest was strong but in-sample — trust the forward record. "
                "The **What-if** column is a derived edge-proportional stake, not "
@@ -518,11 +553,14 @@ def render_open_ai_picks(meta: dict) -> None:
     if ai.empty:
         return
     st.subheader(f"🤖 AI expert — Week {int(week)} picks (pre-game)")
-    rows = ai.assign(Matchup=ai["away_team"] + " @ " + ai["home_team"]).rename(
-        columns={"player": "Expert", "pick": "Pick", "confidence": "Conf",
-                 "rationale": "Why"})
-    st.dataframe(rows[["Expert", "Matchup", "Pick", "Conf", "Why"]],
-                 width="stretch", hide_index=True)
+    show = pd.DataFrame({
+        "Expert": ai["player"].values,
+        **matchup_frame(ai["away_team"], ai["home_team"]),
+        "  ": team_logos(ai["pick"]), "Pick": ai["pick"].values,
+        "Conf": ai["confidence"].values, "Why": ai["rationale"].values,
+    })
+    st.dataframe(show, width="stretch", hide_index=True,
+                 column_config=logo_cfg("", " ", "  "))
     st.caption("The AI's reasoning, shared **before kickoff**. The human experts' "
                "picks stay hidden until the week is graded.")
 
