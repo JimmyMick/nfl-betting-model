@@ -737,18 +737,18 @@ if stamps:
 
 tabs, names = [], []
 names.append("📝 Blog")  # landing tab (Streamlit opens the first tab)
+if preview is not None:
+    names.append("Weekly preview")
+if preview is not None:
+    names.append("Make picks")
+if graded is not None:
+    names.append("Season tracker")
 if schedule is not None:
     names.append("🗓️ Schedule")
 if sim is not None:
     names.append("🏆 Playoff odds")
 if scored is not None or graded is not None:
     names.append("Pick'em leaderboard")
-if preview is not None:
-    names.append("Make picks")
-if graded is not None:
-    names.append("Season tracker")
-if preview is not None:
-    names.append("Weekly preview")
 names.append("📈 Paper play")  # always shown; empty-state until the first play
 names.append("📖 Guide")
 made = st.tabs(names)
