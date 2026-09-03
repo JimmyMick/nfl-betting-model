@@ -27,6 +27,7 @@ PREVIEW_FILE = "latest_preview.csv"
 SCHEDULE_FILE = "schedule.csv"
 SIM_FILE = "playoff_odds.csv"
 SIM_HISTORY_FILE = "playoff_odds_history.csv"
+BLOG_DIR = "blog"
 META_FILE = "meta.json"
 
 # Columns each artifact carries — kept explicit so the cloud reader and the
@@ -164,6 +165,71 @@ def write_sim_artifacts(proj: pd.DataFrame, season: int, through_week: int,
     return out_dir
 
 
+def _slugify(text: str) -> str:
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return (slug[:60] or "post")
+
+
+def save_blog_post(title: str, author: str, body: str,
+                   out_dir: Path = ARTIFACT_DIR,
+                   when: dt.datetime | None = None) -> Path:
+    """Write a blog post as ``blog/YYYYMMDD-HHMMSS-slug.md`` with YAML frontmatter.
+
+    Reverse-lex filenames sort as reverse-chronological on disk, so the reader
+    doesn't need to parse frontmatter dates just to order the feed.
+    """
+    when = when or dt.datetime.now()
+    blog_dir = out_dir / BLOG_DIR
+    blog_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{when.strftime('%Y%m%d-%H%M%S')}-{_slugify(title)}.md"
+    path = blog_dir / fname
+    body = (body or "").rstrip() + "\n"
+    frontmatter = (
+        "---\n"
+        f"title: {title}\n"
+        f"author: {author}\n"
+        f"date: {when.strftime('%Y-%m-%d %H:%M')}\n"
+        "---\n\n"
+    )
+    path.write_text(frontmatter + body)
+    return path
+
+
+def _parse_post(path: Path) -> dict:
+    text = path.read_text()
+    meta = {"title": path.stem, "author": "", "date": ""}
+    body = text
+    if text.startswith("---\n"):
+        end = text.find("\n---", 4)
+        if end != -1:
+            for line in text[4:end].splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    meta[k.strip().lower()] = v.strip()
+            body = text[end + 4:].lstrip("\n")
+    meta["body"] = body
+    meta["path"] = str(path)
+    meta["filename"] = path.name
+    return meta
+
+
+def load_blog_posts(art_dir: Path = ARTIFACT_DIR) -> list[dict]:
+    """Return all blog posts, most recent first (by filename)."""
+    blog_dir = art_dir / BLOG_DIR
+    if not blog_dir.exists():
+        return []
+    return [_parse_post(p) for p in sorted(blog_dir.glob("*.md"), reverse=True)]
+
+
+def delete_blog_post(filename: str, art_dir: Path = ARTIFACT_DIR) -> bool:
+    path = art_dir / BLOG_DIR / filename
+    if path.exists() and path.parent == art_dir / BLOG_DIR:
+        path.unlink()
+        return True
+    return False
+
+
 def load_artifacts(art_dir: Path = ARTIFACT_DIR) -> dict:
     """Read whatever artifacts exist. Missing frames come back as ``None``."""
     def _maybe(name: str) -> pd.DataFrame | None:
@@ -180,5 +246,6 @@ def load_artifacts(art_dir: Path = ARTIFACT_DIR) -> dict:
         "schedule": _maybe(SCHEDULE_FILE),
         "sim": _maybe(SIM_FILE),
         "sim_history": _maybe(SIM_HISTORY_FILE),
+        "blog": load_blog_posts(art_dir),
         "meta": _read_meta(art_dir),
     }

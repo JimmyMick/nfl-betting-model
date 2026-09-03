@@ -869,6 +869,51 @@ def render_paper() -> None:
                  column_config=logo_cfg(""))
 
 
+def render_blog() -> None:
+    """Read the blog feed and (locally) offer a compose form to publish a post."""
+    from nfl_betting_model import cloud as cloud_mod
+    st.caption("Notes for the group about the app, the season, and the stats. "
+               "Posts land in `predictions/cloud/blog/` and are picked up by "
+               "the next weekly cron `git add predictions/cloud` push.")
+
+    with st.expander("✍️ New post", expanded=False):
+        with st.form("blog_new"):
+            title = st.text_input("Title", key="blog_title")
+            author = st.text_input("Author", value="Jim", key="blog_author")
+            body = st.text_area("Body (markdown supported)", height=240,
+                                key="blog_body")
+            submitted = st.form_submit_button("Publish", type="primary")
+        if submitted:
+            if not title.strip() or not body.strip():
+                st.error("Title and body are required.")
+            else:
+                path = cloud_mod.save_blog_post(title.strip(),
+                                                author.strip() or "Jim", body)
+                st.success(f"Published → `{path.name}`. "
+                           "Next weekly cron will commit + push it.")
+
+    posts = cloud_mod.load_blog_posts()
+    if not posts:
+        st.info("No posts yet. Write one above.")
+        return
+
+    st.divider()
+    for post in posts:
+        title = post.get("title") or "(untitled)"
+        date = post.get("date", "")
+        author = post.get("author", "")
+        byline = " · ".join(x for x in (date, author) if x)
+        with st.container(border=True):
+            c1, c2 = st.columns([6, 1])
+            c1.markdown(f"### {title}")
+            if c2.button("🗑 Delete", key=f"del_{post['filename']}"):
+                cloud_mod.delete_blog_post(post["filename"])
+                st.rerun()
+            if byline:
+                st.caption(byline)
+            st.markdown(post.get("body", ""))
+
+
 @st.cache_data(show_spinner="Loading schedule …")
 def _load_schedule(season: int) -> pd.DataFrame:
     """Full-season schedule (matchups + scores) via a light schedule-only fetch."""
@@ -986,10 +1031,10 @@ st.sidebar.caption(
 )
 
 (schedule_tab, odds_tab, preview_tab, ask_tab, makepicks_tab, ai_tab, paper_tab,
- tracker_tab, pickem_tab, roster_tab) = st.tabs(
+ tracker_tab, pickem_tab, roster_tab, blog_tab) = st.tabs(
     ["🗓️ Schedule", "🏆 Playoff odds", "Weekly preview", "Ask the model",
      "Make picks", "AI expert", "📈 Paper play", "Season tracker",
-     "Pick'em leaderboard", "Team roster"])
+     "Pick'em leaderboard", "Team roster", "📝 Blog"])
 
 with schedule_tab:
     st.title(f"Schedule — {season}")
@@ -1116,3 +1161,7 @@ with roster_tab:
     else:
         st.info("Pick a team and **Show roster** for its starters and Madden "
                 "player ratings. Needs a season that's already underway.")
+
+with blog_tab:
+    st.title("📝 Blog")
+    render_blog()

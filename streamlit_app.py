@@ -521,6 +521,25 @@ def render_paper(ledger: pd.DataFrame) -> None:
                "a second real tracker.")
 
 
+def render_blog(posts: list[dict]) -> None:
+    st.header("📝 Blog")
+    st.caption("Notes from Jim on the app, the season, and the stats. "
+               "New posts appear at the top.")
+    if not posts:
+        st.info("No posts yet. Jim can publish one from the local dashboard.")
+        return
+    for post in posts:
+        title = post.get("title") or "(untitled)"
+        date = post.get("date", "")
+        author = post.get("author", "")
+        byline = " · ".join(x for x in (date, author) if x)
+        with st.container(border=True):
+            st.markdown(f"### {title}")
+            if byline:
+                st.caption(byline)
+            st.markdown(post.get("body", ""))
+
+
 def render_guide() -> None:
     """Render the friend-facing user guide (GUIDE.md at the repo root)."""
     try:
@@ -695,6 +714,7 @@ schedule = art["schedule"]
 sim = art["sim"]
 sim_history = art["sim_history"]
 paper_ledger = paper_mod.load_ledger()
+blog_posts = art["blog"]
 
 if graded is None and preview is None and schedule is None and sim is None:
     st.warning("No data published yet. The local weekly runs export results here "
@@ -729,6 +749,7 @@ if graded is not None:
 if preview is not None:
     names.append("Weekly preview")
 names.append("📈 Paper play")  # always shown; empty-state until the first play
+names.append("📝 Blog")
 names.append("📖 Guide")
 made = st.tabs(names)
 tab_by_name = dict(zip(names, made))
@@ -764,6 +785,10 @@ if "Weekly preview" in tab_by_name:
 if "📈 Paper play" in tab_by_name:
     with tab_by_name["📈 Paper play"]:
         render_paper(paper_ledger)
+
+if "📝 Blog" in tab_by_name:
+    with tab_by_name["📝 Blog"]:
+        render_blog(blog_posts)
 
 if "📖 Guide" in tab_by_name:
     with tab_by_name["📖 Guide"]:
