@@ -736,6 +736,7 @@ if stamps:
     st.caption(f"**{season} season** · last updated: " + " · ".join(stamps))
 
 tabs, names = [], []
+names.append("📝 Blog")  # landing tab (Streamlit opens the first tab)
 if schedule is not None:
     names.append("🗓️ Schedule")
 if sim is not None:
@@ -749,7 +750,6 @@ if graded is not None:
 if preview is not None:
     names.append("Weekly preview")
 names.append("📈 Paper play")  # always shown; empty-state until the first play
-names.append("📝 Blog")
 names.append("📖 Guide")
 made = st.tabs(names)
 tab_by_name = dict(zip(names, made))
