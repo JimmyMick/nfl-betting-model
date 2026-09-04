@@ -949,6 +949,32 @@ def render_schedule(season: int) -> None:
 
     df["Result"] = df.apply(_result, axis=1)
 
+    spread = pd.to_numeric(df.get("spread_line"), errors="coerce")
+    total = pd.to_numeric(df.get("total_line"), errors="coerce")
+    away_ml = pd.to_numeric(df.get("away_moneyline"), errors="coerce")
+    home_ml = pd.to_numeric(df.get("home_moneyline"), errors="coerce")
+
+    def _spread(r) -> str:
+        s = spread.get(r.name)
+        if pd.isna(s):
+            return "—"
+        if s > 0:      # nflverse: positive spread_line = home favored
+            return f"{r['home_team']} -{s:g}"
+        if s < 0:
+            return f"{r['away_team']} -{abs(s):g}"
+        return "PK"
+
+    def _ml(v) -> str:
+        return "—" if pd.isna(v) else f"{'+' if v > 0 else ''}{int(v)}"
+
+    df["Spread"] = df.apply(_spread, axis=1)
+    df["O/U"] = total.map(lambda v: "—" if pd.isna(v) else f"{v:g}")
+    df["Moneyline"] = [
+        "—" if pd.isna(a) and pd.isna(h)
+        else f"{r.away_team} {_ml(a)} · {r.home_team} {_ml(h)}"
+        for (a, h), (_, r) in zip(zip(away_ml, home_ml), df.iterrows())
+    ]
+
     weeks = sorted(int(w) for w in df["week"].dropna().unique())
     upcoming = [w for w in weeks if not played[df["week"] == w].all()]
     default_week = upcoming[0] if upcoming else (weeks[-1] if weeks else 1)
@@ -961,6 +987,8 @@ def render_schedule(season: int) -> None:
     show = pd.DataFrame({
         "Wk": view["week"].values, "Date": view["Date"].values,
         **matchup_frame(view["away_team"], view["home_team"]),
+        "Spread": view["Spread"].values, "O/U": view["O/U"].values,
+        "Moneyline": view["Moneyline"].values,
         "Result": view["Result"].values,
     })
     st.dataframe(show, width="stretch", hide_index=True, column_config=MATCHUP_CFG)

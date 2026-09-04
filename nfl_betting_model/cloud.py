@@ -50,6 +50,7 @@ PREVIEW_COLS = [
 SCHEDULE_COLS = [
     "week", "game_type", "gameday", "away_team", "home_team",
     "away_score", "home_score",
+    "spread_line", "total_line", "away_moneyline", "home_moneyline",
 ]
 
 

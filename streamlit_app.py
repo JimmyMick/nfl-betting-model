@@ -345,6 +345,34 @@ def _schedule_rows(sched: pd.DataFrame) -> pd.DataFrame:
 
     df["Result"] = df.apply(_result, axis=1)
     played = aw.notna() & hm.notna()
+
+    spread = pd.to_numeric(df.get("spread_line"), errors="coerce")
+    total = pd.to_numeric(df.get("total_line"), errors="coerce")
+    away_ml = pd.to_numeric(df.get("away_moneyline"), errors="coerce")
+    home_ml = pd.to_numeric(df.get("home_moneyline"), errors="coerce")
+
+    def _spread(r) -> str:
+        s = spread.get(r.name)
+        if pd.isna(s):
+            return "—"
+        if s > 0:      # nflverse: positive spread_line = home favored
+            return f"{r['home_team']} -{s:g}"
+        if s < 0:
+            return f"{r['away_team']} -{abs(s):g}"
+        return "PK"
+
+    def _ml(v) -> str:
+        if pd.isna(v):
+            return "—"
+        return f"{'+' if v > 0 else ''}{int(v)}"
+
+    df["Spread"] = df.apply(_spread, axis=1)
+    df["O/U"] = total.map(lambda v: "—" if pd.isna(v) else f"{v:g}")
+    df["Moneyline"] = [
+        "—" if pd.isna(a) and pd.isna(h)
+        else f"{r.away_team} {_ml(a)} · {r.home_team} {_ml(h)}"
+        for (a, h), (_, r) in zip(zip(away_ml, home_ml), df.iterrows())
+    ]
     return df, played
 
 
@@ -369,12 +397,14 @@ def render_schedule(sched: pd.DataFrame | None, season) -> None:
     show = pd.DataFrame({
         "Wk": view["week"].values, "Date": view["Date"].values,
         **matchup_frame(view["away_team"], view["home_team"]),
+        "Spread": view["Spread"].values, "O/U": view["O/U"].values,
+        "Moneyline": view["Moneyline"].values,
         "Result": view["Result"].values,
     })
     st.dataframe(show, width="stretch", hide_index=True, column_config=MATCHUP_CFG)
     n_played = int(played[view.index].sum())
-    st.caption(f"{len(view)} games · {n_played} played · "
-               "results fill in as the weekly runs refresh.")
+    st.caption(f"{len(view)} games · {n_played} played · odds are the latest "
+               "published market line · results fill in as the weekly runs refresh.")
 
 
 def render_playoff_odds(sim, sim_history, meta, season) -> None:

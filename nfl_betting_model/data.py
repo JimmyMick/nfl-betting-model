@@ -23,6 +23,7 @@ _KEEP = [
     "home_moneyline",
     "away_moneyline",
     "spread_line",
+    "total_line",
     "div_game",
     "roof",
     "location",
