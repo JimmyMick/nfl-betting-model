@@ -1,0 +1,4 @@
+season,week,game_id,away_team,home_team,side,bet_home,model_home_prob,spread_line,implied_spread,gap,result,profit,logged_at,settled_at
+2026.0,1.0,2026_01_ARI_LAC,ARI,LAC,ARI,0.0,0.7504,10.5,6.5,-4.0,open,,2026-09-05T14:12:33+00:00,
+2026.0,1.0,2026_01_BAL_IND,BAL,IND,BAL,0.0,0.2764,-3.5,-5.54,-2.04,open,,2026-09-05T14:12:33+00:00,
+2026.0,1.0,2026_01_MIA_LV,MIA,LV,MIA,0.0,0.4173,3.5,-2.79,-6.29,open,,2026-09-05T14:12:33+00:00,

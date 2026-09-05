@@ -1,0 +1,2 @@
+season,week,game_id,away_team,home_team,model_side,bet_home,model_home_prob,market_home_prob,edge,price_ml,stake,result,profit,logged_at,settled_at
+2026.0,1.0,2026_01_MIA_LV,MIA,LV,MIA,0.0,0.4173,0.6369,-0.2196,164.0,10.0,open,,2026-09-05T14:12:33+00:00,
